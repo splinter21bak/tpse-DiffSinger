@@ -69,8 +69,9 @@ class LYNXNetDecoder(nn.Module):
         x = x.transpose(1, 2)
         for layer in self.encoder_layers:
             x = layer(x)
-        x = x.transpose(1, 2)
         x = self.norm(x)
+        x = x.transpose(1, 2)
+        
         x = self.output_projection(x)
         x = x.transpose(1, 2)
         
