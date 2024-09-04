@@ -173,7 +173,7 @@ class LYNXNet(nn.Module):
             x = layer(x, cond, diffusion_step)
 
         # post-norm
-        x = self.norm(x)
+        x = self.norm(x.transpose(1, 2)).transpose(1, 2)
         
         # MLP and GLU
         x = self.output_projection(x)  # [B, 128, T]
