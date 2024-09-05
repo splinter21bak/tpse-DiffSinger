@@ -50,12 +50,12 @@ class LYNXNetDecoder(nn.Module):
                     dropout=dropout_rate) for _ in range(num_layers)
         )
         self.norm = nn.LayerNorm(num_channels)
-        # self.output_projection = nn.Conv1d(num_channels, out_dims, kernel_size=1)
-        self.output_projection = nn.Sequential(
-            nn.Conv1d(num_channels, num_channels * 4, kernel_size=1),
-            nn.GELU(),
-            nn.Conv1d(num_channels * 4, out_dims, kernel_size=1),
-        )
+        self.output_projection = nn.Conv1d(num_channels, out_dims, kernel_size=1)
+        # self.output_projection = nn.Sequential(
+            # nn.Conv1d(num_channels, num_channels * 4, kernel_size=1),
+            # nn.GELU(),
+            # nn.Conv1d(num_channels * 4, out_dims, kernel_size=1),
+        # )
 
     def forward(self, x, infer=False):
         """
