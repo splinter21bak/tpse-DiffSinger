@@ -139,13 +139,6 @@ class LYNXNet(nn.Module):
         self.norm = nn.LayerNorm(n_chans)
         self.output_projection = nn.Conv1d(n_chans, in_dims * n_feats, kernel_size=1)
         nn.init.zeros_(self.output_projection.weight)
-        # _ = nn.Conv1d(n_chans * 4, in_dims * n_feats, kernel_size=1)
-        # nn.init.zeros_(_.weight)
-        # self.output_projection = nn.Sequential(
-            # nn.Conv1d(n_chans, n_chans * 4, kernel_size=1),
-            # nn.GELU(),
-            # _,
-        # )
     
     def forward(self, spec, diffusion_step, cond):
         """
