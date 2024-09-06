@@ -49,6 +49,7 @@ class LYNXNetDecoder(nn.Module):
                     activation='SiLU', 
                     dropout=dropout_rate) for _ in range(num_layers)
         )
+        self.norm = nn.LayerNorm(num_channels)
         self.output_projection = nn.Conv1d(num_channels, out_dims, kernel_size=1)
 
     def forward(self, x, infer=False):
@@ -63,7 +64,9 @@ class LYNXNetDecoder(nn.Module):
         x = x.transpose(1, 2)
         for layer in self.encoder_layers:
             x = layer(x)
+        x = self.norm(x)
         x = x.transpose(1, 2)
+        
         x = self.output_projection(x)
         x = x.transpose(1, 2)
         

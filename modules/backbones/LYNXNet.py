@@ -57,7 +57,6 @@ class LYNXConvModule(nn.Module):
     def __init__(self, dim, expansion_factor, kernel_size=31, in_norm=False, activation='PReLU', dropout=0.):
         super().__init__()
         inner_dim = dim * expansion_factor
-        _normalize = nn.LayerNorm(dim) if in_norm or dim > 512 else nn.Identity()
         activation_classes = {
             'SiLU': nn.SiLU,
             'ReLU': nn.ReLU,
@@ -73,7 +72,7 @@ class LYNXConvModule(nn.Module):
         else:
             _dropout = nn.Identity()
         self.net = nn.Sequential(
-            _normalize,
+            nn.LayerNorm(dim),
             Transpose((1, 2)),
             nn.Conv1d(dim, inner_dim * 2, 1),
             SwiGLU(dim=1),
@@ -137,9 +136,10 @@ class LYNXNet(nn.Module):
                 for i in range(n_layers)
             ]
         )
+        self.norm = nn.LayerNorm(n_chans)
         self.output_projection = nn.Conv1d(n_chans, in_dims * n_feats, kernel_size=1)
         nn.init.zeros_(self.output_projection.weight)
-        
+    
     def forward(self, spec, diffusion_step, cond):
         """
         :param spec: [B, F, M, T]
@@ -164,6 +164,9 @@ class LYNXNet(nn.Module):
         
         for layer in self.residual_layers:
             x = layer(x, cond, diffusion_step)
+
+        # post-norm
+        x = self.norm(x.transpose(1, 2)).transpose(1, 2)
         
         # MLP and GLU
         x = self.output_projection(x)  # [B, 128, T]
