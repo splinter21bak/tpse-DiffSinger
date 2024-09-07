@@ -186,7 +186,7 @@ class RotaryPositionalEmbeddings(nn.Module):
         # Calculate
         neg_half_x = self._neg_half(x_rope)
         x_rope = (x_rope * self.cos_cached[: x.shape[0]]) + (neg_half_x * self.sin_cached[: x.shape[0]])
-        return rearrange(torch.cat((x_rope, x_pass), dim=-1), "t b h d -> b h t d")
+        return torch.cat((x_rope, x_pass), dim=-1).permute(1, 2, 0, 3) # t b h d -> b h t d
 
 
 class RotaryPEMultiHeadAttention(nn.Module):
