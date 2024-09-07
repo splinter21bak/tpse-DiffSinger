@@ -179,7 +179,7 @@ class RotaryPositionalEmbeddings(nn.Module):
         """
         * `x` is the Tensor at the head of a key or a query with shape `[seq_len, batch_size, n_heads, d]`
         """
-        x = rearrange(x, "b h t d -> t b h d")
+        x = x.permute(2, 0, 1, 3) # b h t d -> t b h d
         self._build_cache(x)
         # Split the features, we can choose to apply rotary embeddings only to a partial set of features.
         x_rope, x_pass = x[..., : self.d], x[..., self.d :]
