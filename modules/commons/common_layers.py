@@ -193,7 +193,7 @@ class RotaryPEMultiHeadAttention(nn.Module):
     def __init__(self, channels, out_channels, n_heads, 
                  heads_share=True, p_dropout=0.0, proximal_bias=False, 
                  proximal_init=False):
-        super(MultiHeadAttention, self).__init__()
+        super(RotaryPEMultiHeadAttention, self).__init__()
         assert channels % n_heads == 0
 
         self.channels = channels
@@ -223,7 +223,7 @@ class RotaryPEMultiHeadAttention(nn.Module):
             self.conv_k.bias.data.copy_(self.conv_q.bias.data)
         torch.nn.init.xavier_uniform_(self.conv_v.weight)
 
-    def forward(self, x, c, attn_mask=None):
+    def forward(self, x, c, attn_mask=None, key_padding_mask=None):
         q = self.conv_q(x)
         k = self.conv_k(c)
         v = self.conv_v(c)
@@ -233,11 +233,11 @@ class RotaryPEMultiHeadAttention(nn.Module):
         x = self.conv_o(x)
         return x
 
-    def attention(self, query, key, value, mask=None):
+    def attention(self, query, key, value, mask=None, key_padding_mask=None):
         b, d, t_s, t_t = (*key.size(), query.size(2))
-        query = rearrange(query, "b (h c) t-> b h t c", h=self.n_heads)
-        key = rearrange(key, "b (h c) t-> b h t c", h=self.n_heads)
-        value = rearrange(value, "b (h c) t-> b h t c", h=self.n_heads)
+        query = query.view(b, self.n_heads, self.k_channels, t_t).transpose(2, 3)
+        key = key.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
+        value = value.view(b, self.n_heads, self.k_channels, t_s).transpose(2, 3)
 
         query = self.query_rotary_pe(query)
         key = self.key_rotary_pe(key)
@@ -248,6 +248,14 @@ class RotaryPEMultiHeadAttention(nn.Module):
             assert t_s == t_t, "Proximal bias is only available for self-attention."
             scores = scores + self._attention_bias_proximal(t_s).to(device=scores.device, 
                                                                     dtype=scores.dtype)
+
+        if key_padding_mask is not None:
+            # Apply the key_padding_mask to the scores before the softmax.
+            # key_padding_mask is a bool tensor with shape [batch_size, seq_len].
+            # We expand it to [batch_size, 1, seq_len, 1] to broadcast across the heads and time dimension.
+            key_padding_mask = key_padding_mask.unsqueeze(1).unsqueeze(2)
+            scores = scores.masked_fill(key_padding_mask, float('-inf'))
+        
         if mask is not None:
             scores = scores.masked_fill(mask == 0, -1e4)
         p_attn = torch.nn.functional.softmax(scores, dim=-1)
@@ -288,13 +296,8 @@ class EncSALayer(nn.Module):
         residual = x
         x = self.layer_norm1(x)
         if self.use_RoPE:
-            # 在 RotaryPEMultiHeadAttention 中处理 padding mask
-            if encoder_padding_mask is not None:
-                # 将 padding mask 转换为适用于 RotaryPEMultiHeadAttention 的形式
-                attn_mask = (encoder_padding_mask == 0).view(x.size(1), x.size(0), 1, 1)
-            else:
-                attn_mask = None
-            x = self.self_attn(x, x, attn_mask=attn_mask)
+            x = self.self_attn(x.transpose(1, 2), x.transpose(1, 2), key_padding_mask=encoder_padding_mask)
+            x = x.transpose(1, 2)
         else:
             x, _, = self.self_attn(
                 query=x,
