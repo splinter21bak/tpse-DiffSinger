@@ -264,13 +264,17 @@ class RotaryPEMultiHeadAttention(nn.Module):
 
 class EncSALayer(nn.Module):
     def __init__(self, c, num_heads, dropout, attention_dropout=0.1,
-                 relu_dropout=0.1, kernel_size=9, act='gelu'):
+                 relu_dropout=0.1, kernel_size=9, act='gelu', use_RoPE=False):
         super().__init__()
         self.dropout = dropout
         self.layer_norm1 = LayerNorm(c)
-        self.self_attn = MultiheadAttention(
-            c, num_heads, dropout=attention_dropout, bias=False,
-        )
+        self.use_RoPE = use_RoPE
+        if self.use_RoPE:
+            self.self_attn = RotaryPEMultiHeadAttention(c, c, num_heads, p_dropout=attention_dropout)
+        else:
+            self.self_attn = MultiheadAttention(
+                c, num_heads, dropout=attention_dropout, bias=False,
+            )
         self.layer_norm2 = LayerNorm(c)
         self.ffn = TransformerFFNLayer(
             c, 4 * c, kernel_size=kernel_size, dropout=relu_dropout, act=act
@@ -283,12 +287,21 @@ class EncSALayer(nn.Module):
             self.layer_norm2.training = layer_norm_training
         residual = x
         x = self.layer_norm1(x)
-        x, _, = self.self_attn(
-            query=x,
-            key=x,
-            value=x,
-            key_padding_mask=encoder_padding_mask
-        )
+        if self.use_RoPE:
+            # 在 RotaryPEMultiHeadAttention 中处理 padding mask
+            if encoder_padding_mask is not None:
+                # 将 padding mask 转换为适用于 RotaryPEMultiHeadAttention 的形式
+                attn_mask = (encoder_padding_mask == 0).view(x.size(1), x.size(0), 1, 1)
+            else:
+                attn_mask = None
+            x = self.self_attn(x, x, attn_mask=attn_mask)
+        else:
+            x, _, = self.self_attn(
+                query=x,
+                key=x,
+                value=x,
+                key_padding_mask=encoder_padding_mask
+            )
         x = F.dropout(x, self.dropout, training=self.training)
         x = residual + x
         x = x * (1 - encoder_padding_mask.float()).transpose(0, 1)[..., None]

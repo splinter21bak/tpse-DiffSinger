@@ -12,13 +12,14 @@ DEFAULT_MAX_TARGET_POSITIONS = 2000
 
 
 class TransformerEncoderLayer(nn.Module):
-    def __init__(self, hidden_size, dropout, kernel_size=None, act='gelu', num_heads=2):
+    def __init__(self, hidden_size, dropout, kernel_size=None, act='gelu', num_heads=2, use_RoPE=False):
         super().__init__()
         self.op = EncSALayer(
             hidden_size, num_heads, dropout=dropout,
             attention_dropout=0.0, relu_dropout=dropout,
             kernel_size=kernel_size,
-            act=act
+            act=act,
+            use_RoPE=use_RoPE
         )
 
     def forward(self, x, **kwargs):
@@ -353,7 +354,7 @@ def mel2ph_to_dur(mel2ph, T_txt, max_dur=None):
 class FastSpeech2Encoder(nn.Module):
     def __init__(self, hidden_size, num_layers,
                  ffn_kernel_size=9, ffn_act='gelu',
-                 dropout=None, num_heads=2, use_pos_embed=True, rel_pos=True):
+                 dropout=None, num_heads=2, use_pos_embed=True, rel_pos=True, use_RoPE=False):
         super().__init__()
         self.num_layers = num_layers
         embed_dim = self.hidden_size = hidden_size
@@ -364,7 +365,7 @@ class FastSpeech2Encoder(nn.Module):
             TransformerEncoderLayer(
                 self.hidden_size, self.dropout,
                 kernel_size=ffn_kernel_size, act=ffn_act,
-                num_heads=num_heads
+                num_heads=num_heads, use_RoPE=use_RoPE
             )
             for _ in range(self.num_layers)
         ])
@@ -373,12 +374,17 @@ class FastSpeech2Encoder(nn.Module):
         self.embed_scale = math.sqrt(hidden_size)
         self.padding_idx = 0
         self.rel_pos = rel_pos
-        if self.rel_pos:
-            self.embed_positions = RelPositionalEncoding(hidden_size, dropout_rate=0.0)
+        self.use_RoPE = use_RoPE
+        if self.use_RoPE:
+            # When using RoPE, position encoding is not embedded here.
+            self.embed_positions = None
         else:
-            self.embed_positions = SinusoidalPositionalEmbedding(
-                hidden_size, self.padding_idx, init_size=DEFAULT_MAX_TARGET_POSITIONS,
-            )
+            if self.rel_pos:
+                self.embed_positions = RelPositionalEncoding(hidden_size, dropout_rate=0.0)
+            else:
+                self.embed_positions = SinusoidalPositionalEmbedding(
+                    hidden_size, self.padding_idx, init_size=DEFAULT_MAX_TARGET_POSITIONS,
+                )
 
     def forward_embedding(self, main_embed, extra_embed=None, padding_mask=None):
         # embed tokens and positions
@@ -387,10 +393,13 @@ class FastSpeech2Encoder(nn.Module):
             x = x + extra_embed
         if self.use_pos_embed:
             if self.rel_pos:
-                x = self.embed_positions(x)
+                pass
             else:
-                positions = self.embed_positions(~padding_mask)
-                x = x + positions
+                if self.rel_pos:
+                    x = self.embed_positions(x)
+                else:
+                    positions = self.embed_positions(~padding_mask)
+                    x = x + positions
         x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
