@@ -1,3 +1,8 @@
+添加了ESM模块用于增强跨语言情景下的性能，具体参考BiSinger
+
+
+
+
 # DiffSinger (OpenVPI maintained version)
 
 [![arXiv](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2105.02446)

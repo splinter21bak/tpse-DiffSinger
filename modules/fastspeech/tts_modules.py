@@ -353,7 +353,7 @@ def mel2ph_to_dur(mel2ph, T_txt, max_dur=None):
 class FastSpeech2Encoder(nn.Module):
     def __init__(self, hidden_size, num_layers,
                  ffn_kernel_size=9, ffn_act='gelu',
-                 dropout=None, num_heads=2, use_pos_embed=True, rel_pos=True):
+                 dropout=None, num_heads=2, use_pos_embed=True, rel_pos=True, use_esm=False):
         super().__init__()
         self.num_layers = num_layers
         embed_dim = self.hidden_size = hidden_size
@@ -379,12 +379,22 @@ class FastSpeech2Encoder(nn.Module):
             self.embed_positions = SinusoidalPositionalEmbedding(
                 hidden_size, self.padding_idx, init_size=DEFAULT_MAX_TARGET_POSITIONS,
             )
+        self.use_esm = use_esm
+        if self.use_esm:
+            self.esm = ESM(d_model=self.hidden_size, nhead=8)
 
-    def forward_embedding(self, main_embed, extra_embed=None, padding_mask=None):
+    def forward_embedding(self, main_embed, lang_embed=None, extra_embed=None, padding_mask=None):
         # embed tokens and positions
         x = self.embed_scale * main_embed
         if extra_embed is not None:
-            x = x + extra_embed
+            if lang_embed is not None:
+                if self.use_esm:
+                    dynamic_lang = self.esm(x, lang_embed)
+                    x = x + dynamic_lang + extra_embed
+                else:
+                    x = x + extra_embed + lang_embed
+            else:
+                x = x + extra_embed
         if self.use_pos_embed:
             if self.rel_pos:
                 x = self.embed_positions(x)
@@ -394,8 +404,8 @@ class FastSpeech2Encoder(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
-    def forward(self, main_embed, extra_embed, padding_mask, attn_mask=None, return_hiddens=False):
-        x = self.forward_embedding(main_embed, extra_embed, padding_mask=padding_mask)  # [B, T, H]
+    def forward(self, main_embed, lang_embed, extra_embed, padding_mask, attn_mask=None, return_hiddens=False):
+        x = self.forward_embedding(main_embed, lang_embed, extra_embed, padding_mask=padding_mask)  # [B, T, H]
         nonpadding_mask_TB = 1 - padding_mask.transpose(0, 1).float()[:, :, None]  # [T, B, 1]
 
         # NOTICE:
@@ -424,3 +434,39 @@ class FastSpeech2Encoder(nn.Module):
         else:
             x = x.transpose(0, 1)  # [B, T, C]
         return x
+
+
+class ESM(nn.Module):
+    # Embedding Strength Modulator
+    def __init__(self, d_model, nhead=8):
+        super(ESM, self).__init__()
+
+        # Multi-Head Attention Layer
+        self.mh = nn.MultiheadAttention(d_model, nhead)
+
+        # Feed-forward Network
+        self.ffn = nn.Sequential(
+            nn.Linear(d_model, d_model), nn.ReLU(), nn.Linear(d_model, d_model)
+        )
+
+        # Layer Normalization Layers
+        self.ln1 = nn.LayerNorm(d_model)
+        self.ln2 = nn.LayerNorm(d_model)
+
+    def forward(self, Eo, LP):
+        # Applying Layer Normalization to LP
+        LP_norm = self.ln1(LP)
+
+        if LP_norm.dim() < 3:
+            # Add a new dimension at the beginning for infer
+            LP_norm = LP_norm.unsqueeze(0)
+
+        # Calculating Mo using Multi-Head Attention
+        Mo, _ = self.mh(Eo, LP_norm, LP_norm)
+        Mo += LP  # Residual connection
+
+        # Calculating Fo using Feed-Forward Network
+        Fo = self.ffn(self.ln2(Mo))
+        Fo += Mo  # Residual connection
+
+        return Fo
