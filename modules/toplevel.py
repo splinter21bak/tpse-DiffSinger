@@ -23,9 +23,10 @@ from utils.hparams import hparams
 
 
 class ShallowDiffusionOutput:
-    def __init__(self, *, aux_out=None, diff_out=None):
+    def __init__(self, *, aux_out=None, diff_out=None, post_out=None):
         self.aux_out = aux_out
         self.diff_out = diff_out
+        self.post_out = post_out
 
 
 class DiffSingerAcoustic(CategorizedModule, ParameterAdaptorModule):
@@ -85,6 +86,18 @@ class DiffSingerAcoustic(CategorizedModule, ParameterAdaptorModule):
             )
         else:
             raise NotImplementedError(self.diffusion_type)
+        
+        self.use_postnet = hparams.get('use_postnet', False)
+        self.postnet_args = hparams.get('postnet_args', {})
+        if self.use_postnet:
+            self.postnet = Postnet(
+                in_dim=hparams['audio_num_mel_bins'],
+                n_channels=self.postnet_args['postnet_n_channels'],
+                kernel_size=self.postnet_args['postnet_kernel_size'],
+                n_layers=self.postnet_args['postnet_n_layers'],
+                dropout=self.postnet_args['postnet_dropout'],
+            ) 
+        
 
     def forward(
             self, txt_tokens, mel2ph, f0, key_shift=None, speed=None,
