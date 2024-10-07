@@ -1,3 +1,17 @@
+这个分支实现了一个基于规则匹配的durloss，用于解决中文场合下辅音过长造成的吐字不清问题
+
+https://github.com/KakaruHayate/DiffSinger/blob/dur-RulesLoss/modules/losses/dur_loss.py
+
+代码在这里，实现的训练效率很低（大概3x-4x），毕竟只是做下实验
+
+```
+initials_duration = {"d": 2, "t": 3, "g": 2, "b": 2}
+voice_duration = {"w": 5, "l": 5}
+ratio_change = ["y", "m", "n", "l", "r", "w"]
+```
+
+以上为代码中token指代的实际音素，可以根据自己的需求修改
+
 # DiffSinger (OpenVPI maintained version)
 
 [![arXiv](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2105.02446)
