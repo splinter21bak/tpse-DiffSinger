@@ -12,6 +12,8 @@ ratio_change = ["y", "m", "n", "l", "r", "w"]
 
 以上为代码中token指代的实际音素，可以根据自己的需求修改
 
+个人觉得确实解决了规则覆盖下的音素吐字模糊问题，但是太短的辅音连贯性不太好
+
 # DiffSinger (OpenVPI maintained version)
 
 [![arXiv](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2105.02446)
