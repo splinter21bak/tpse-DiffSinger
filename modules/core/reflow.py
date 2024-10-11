@@ -73,7 +73,7 @@ class RectifiedFlow(nn.Module):
                 v_pred_a, v_pred_b, f_pred_a, f_pred_b = self.p_consistency_losses(spec, t_a, t_b, cond=cond)
                 v_pred = None
                 v_gt = None
-                if not self.consistency_only
+                if not self.consistency_only:
                     v_pred, v_gt = self.p_losses(spec, t_a, cond=cond)
                 return v_pred_a, v_pred_b, f_pred_a, f_pred_b, v_pred, v_gt
             else:
