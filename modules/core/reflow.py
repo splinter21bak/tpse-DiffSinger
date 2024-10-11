@@ -54,7 +54,7 @@ class RectifiedFlow(nn.Module):
         f_pred_a = x_t_a + (1 - t_a[:, None, None, None]) * v_pred_a
         f_pred_b = x_t_b + (1 - t_b[:, None, None, None]) * v_pred_b
 
-        return v_pred_a, v_pred_b, f_pred_a, f_pred_b
+        return v_pred_a, v_pred_b, f_pred_a, f_pred_b, x_end - x_start
 
     def forward(self, condition, gt_spec=None, src_spec=None, infer=True):
         cond = condition.transpose(1, 2)
@@ -70,11 +70,12 @@ class RectifiedFlow(nn.Module):
                 dt = self.consistency_delta_t * torch.randn(b, device=device).abs()
                 t_a = torch.clip(t - 0.5 * dt, self.t_start, 1)
                 t_b = torch.clip(t + 0.5 * dt, self.t_start, 1)
-                v_pred_a, v_pred_b, f_pred_a, f_pred_b = self.p_consistency_losses(spec, t_a, t_b, cond=cond)
-                v_pred = None
-                v_gt = None
-                if not self.consistency_only:
-                    v_pred, v_gt = self.p_losses(spec, t_a, cond=cond)
+                v_pred_a, v_pred_b, f_pred_a, f_pred_b, v_gt = self.p_consistency_losses(spec, t_a, t_b, cond=cond)
+                # v_pred = None
+                # v_gt = None
+                # if not self.consistency_only:
+                #     v_pred, v_gt = self.p_losses(spec, t_a, cond=cond)
+                v_pred = v_pred_a
                 return v_pred_a, v_pred_b, f_pred_a, f_pred_b, v_pred, v_gt
             else:
                 # gt_spec: [B, T, M] or [B, F, T, M]
