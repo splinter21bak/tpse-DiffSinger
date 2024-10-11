@@ -1,4 +1,5 @@
 base_config:
+  - configs/consistency_fm.yaml
   - configs/variance.yaml
 
 dictionaries:

@@ -10,7 +10,7 @@ from basics.base_dataset import BaseDataset
 from basics.base_task import BaseTask
 from basics.base_vocoder import BaseVocoder
 from modules.aux_decoder import build_aux_loss
-from modules.losses import DiffusionLoss, RectifiedFlowLoss
+from modules.losses import DiffusionLoss, RectifiedFlowLoss, VelocityConsistencyLoss, TrajectoryConsistencyLoss
 from modules.toplevel import DiffSingerAcoustic, ShallowDiffusionOutput
 from modules.vocoders.registry import get_vocoder_cls
 from utils.hparams import hparams
@@ -79,6 +79,14 @@ class AcousticTask(BaseTask):
             self.train_aux_decoder = self.shallow_args['train_aux_decoder']
             self.train_diffusion = self.shallow_args['train_diffusion']
 
+        self.use_consistency_fm = hparams['use_consistency_fm']
+        if self.use_consistency_fm:
+            self.consistency_args = hparams['consistency_args']
+            self.consistency_only = self.consistency_args['consistency_only']
+            self.consistency_delta_t = self.consistency_args['consistency_delta_t']
+            self.consistency_lambda_f = self.consistency_args['consistency_lambda_f']
+            self.consistency_lambda_v = self.consistency_args['consistency_lambda_v']
+
         self.use_vocoder = hparams['infer'] or hparams['val_with_vocoder']
         if self.use_vocoder:
             self.vocoder: BaseVocoder = get_vocoder_cls(hparams)()
@@ -109,9 +117,17 @@ class AcousticTask(BaseTask):
         if self.diffusion_type == 'ddpm':
             self.mel_loss = DiffusionLoss(loss_type=hparams['main_loss_type'])
         elif self.diffusion_type == 'reflow':
-            self.mel_loss = RectifiedFlowLoss(
-                loss_type=hparams['main_loss_type'], log_norm=hparams['main_loss_log_norm']
-            )
+            if self.use_consistency_fm:
+                self.v_loss = VelocityConsistencyLoss(loss_type=hparams['main_loss_type'])
+                self.f_loss = TrajectoryConsistencyLoss(loss_type=hparams['main_loss_type'], consistency_delta_t = self.consistency_delta_t)
+                if not self.consistency_only:
+                    self.mel_loss = RectifiedFlowLoss(
+                        loss_type=hparams['main_loss_type'], log_norm=hparams['main_loss_log_norm']
+                    )
+            else:
+                self.mel_loss = RectifiedFlowLoss(
+                    loss_type=hparams['main_loss_type'], log_norm=hparams['main_loss_log_norm']
+                )
         else:
             raise ValueError(f"Unknown diffusion type: {self.diffusion_type}")
         self.register_validation_loss('mel_loss')
@@ -160,8 +176,17 @@ class AcousticTask(BaseTask):
                     x_recon, x_noise = output.diff_out
                     mel_loss = self.mel_loss(x_recon, x_noise, non_padding=non_padding)
                 elif self.diffusion_type == 'reflow':
-                    v_pred, v_gt, t = output.diff_out
-                    mel_loss = self.mel_loss(v_pred, v_gt, t=t, non_padding=non_padding)
+                    if self.use_consistency_fm:
+                        v_pred_a, v_pred_b, f_pred_a, f_pred_b, v_pred, v_gt = output.diff_out
+                        f_loss = self.f_loss(f_pred_a, f_pred_b, non_padding=non_padding)
+                        v_loss = self.v_loss(v_pred_a, v_pred_b, non_padding=non_padding)
+                        mel_loss = self.consistency_lambda_f * f_loss + self.consistency_lambda_v * v_loss
+                        if not self.consistency_only:
+                            reflow_loss = self.mel_loss(v_pred, v_gt, t=None, non_padding=non_padding)
+                            mel_loss = mel_loss + reflow_loss
+                    else:
+                        v_pred, v_gt, t = output.diff_out
+                        mel_loss = self.mel_loss(v_pred, v_gt, t=t, non_padding=non_padding)
                 else:
                     raise ValueError(f"Unknown diffusion type: {self.diffusion_type}")
                 losses['mel_loss'] = mel_loss

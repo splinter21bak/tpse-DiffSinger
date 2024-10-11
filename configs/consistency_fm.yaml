@@ -1,0 +1,6 @@
+use_consistency_fm: True
+consistency_args:
+  consistency_only: False
+  consistency_delta_t: 0.1
+  consistency_lambda_f: 1
+  consistency_lambda_v: 0.01

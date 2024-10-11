@@ -1,4 +1,5 @@
 base_config:
+  - configs/consistency_fm.yaml
   - configs/acoustic.yaml
 
 dictionaries:

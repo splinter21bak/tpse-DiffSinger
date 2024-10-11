@@ -26,6 +26,11 @@ class RectifiedFlow(nn.Module):
         self.t_start = t_start
         self.time_scale_factor = time_scale_factor
 
+        self.use_consistency_fm = hparams.get('use_consistency_fm', False)
+        self.consistency_args = hparams['consistency_args']
+        self.consistency_only = self.consistency_args['consistency_only']
+        self.consistency_delta_t = self.consistency_args['consistency_delta_t']
+
         # spec: [B, T, M] or [B, F, T, M]
         # spec_min and spec_max: [1, 1, M] or [1, 1, F, M] => transpose(-3, -2) => [1, 1, M] or [1, F, 1, M]
         spec_min = torch.FloatTensor(spec_min)[None, None, :out_dims].transpose(-3, -2)
@@ -40,18 +45,46 @@ class RectifiedFlow(nn.Module):
 
         return v_pred, x_end - x_start
 
+    def p_consistency_losses(self, x_end, t_a, t_b, cond):
+        x_start = torch.randn_like(x_end)
+        x_t_a = x_start + t_a[:, None, None, None] * (x_end - x_start)
+        x_t_b = x_start + t_b[:, None, None, None] * (x_end - x_start)
+        v_pred_a = self.velocity_fn(x_t_a, t_a * self.time_scale_factor, cond)
+        v_pred_b = self.velocity_fn(x_t_b, t_b * self.time_scale_factor, cond).detach()
+        f_pred_a = x_t_a + (1 - t_a[:, None, None, None]) * v_pred_a
+        f_pred_b = x_t_b + (1 - t_b[:, None, None, None]) * v_pred_b
+
+        return v_pred_a, v_pred_b, f_pred_a, f_pred_b
+
     def forward(self, condition, gt_spec=None, src_spec=None, infer=True):
         cond = condition.transpose(1, 2)
         b, device = condition.shape[0], condition.device
 
         if not infer:
-            # gt_spec: [B, T, M] or [B, F, T, M]
-            spec = self.norm_spec(gt_spec).transpose(-2, -1)  # [B, M, T] or [B, F, M, T]
-            if self.num_feats == 1:
-                spec = spec[:, None, :, :]  # [B, F=1, M, T]
-            t = self.t_start + (1.0 - self.t_start) * torch.rand((b,), device=device)
-            v_pred, v_gt = self.p_losses(spec, t, cond=cond)
-            return v_pred, v_gt, t
+            if self.use_consistency_fm:
+                # gt_spec: [B, T, M] or [B, F, T, M]
+                spec = self.norm_spec(gt_spec).transpose(-2, -1)  # [B, M, T] or [B, F, M, T]
+                if self.num_feats == 1:
+                    spec = spec[:, None, :, :]  # [B, F=1, M, T]
+                t = self.t_start + (1.0 - self.t_start) * torch.rand((b,), device=device)
+                dt = self.consistency_delta_t * torch.randn(b, device=device).abs()
+                t_a = torch.clip(t - 0.5 * dt, self.t_start, 1)
+                t_b = torch.clip(t + 0.5 * dt, self.t_start, 1)
+                v_pred_a, v_pred_b, f_pred_a, f_pred_b = self.p_consistency_losses(spec, t_a, t_b, cond=cond)
+                v_pred = None
+                v_gt = None
+                if not self.consistency_only
+                    v_pred, v_gt = self.p_losses(spec, t_a, cond=cond)
+                return v_pred_a, v_pred_b, f_pred_a, f_pred_b, v_pred, v_gt
+            else:
+                # gt_spec: [B, T, M] or [B, F, T, M]
+                spec = self.norm_spec(gt_spec).transpose(-2, -1)  # [B, M, T] or [B, F, M, T]
+                if self.num_feats == 1:
+                    spec = spec[:, None, :, :]  # [B, F=1, M, T]
+                t = self.t_start + (1.0 - self.t_start) * torch.rand((b,), device=device)
+                t = torch.clip(t, 1e-7, 1 - 1e-7)
+                v_pred, v_gt = self.p_losses(spec, t, cond=cond)
+                return v_pred, v_gt, t
         else:
             # src_spec: [B, T, M] or [B, F, T, M]
             if src_spec is not None:
