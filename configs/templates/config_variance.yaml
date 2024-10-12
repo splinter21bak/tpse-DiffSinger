@@ -107,6 +107,9 @@ lambda_dur_loss: 1.0
 lambda_pitch_loss: 1.0
 lambda_var_loss: 1.0
 
+grad_checkpoint: True # 节省显存占用
+sampling_steps: 4 # 经验上，一致性模型在4步有不错的表现
+
 optimizer_args:
   lr: 0.0006
 lr_scheduler_args:
