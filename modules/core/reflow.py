@@ -50,7 +50,7 @@ class RectifiedFlow(nn.Module):
         x_t_a = x_start + t_a[:, None, None, None] * (x_end - x_start)
         x_t_b = x_start + t_b[:, None, None, None] * (x_end - x_start)
         v_pred_a = self.velocity_fn(x_t_a, t_a * self.time_scale_factor, cond)
-        v_pred_b = self.velocity_fn(x_t_b, t_b * self.time_scale_factor, cond).detach()
+        v_pred_b = self.velocity_fn(x_t_b, t_b * self.time_scale_factor, cond.detach()).detach()
         f_pred_a = x_t_a + (1 - t_a[:, None, None, None]) * v_pred_a
         f_pred_b = x_t_b + (1 - t_b[:, None, None, None]) * v_pred_b
 
