@@ -454,6 +454,7 @@ class ESM(nn.Module):
         self.ln2 = nn.LayerNorm(d_model)
 
     def forward(self, Eo, LP, padding_mask=None):
+        padding_mask = padding_mask.transpose(0, 1)
         # Applying Layer Normalization to LP
         LP_norm = self.ln1(LP)
 
@@ -462,13 +463,13 @@ class ESM(nn.Module):
             LP_norm = LP_norm.unsqueeze(0)
 
         # Calculating Mo using Multi-Head Attention
-        Mo, _ = self.mh(Eo, LP_norm, LP_norm, key_padding_mask=padding_mask.transpose(0, 1))
+        Mo, _ = self.mh(Eo, LP_norm, LP_norm, key_padding_mask=padding_mask)
         Mo += LP  # Residual connection
-        Mo = Mo * (1 - padding_mask.float())[..., None]
+        Mo = Mo * (1 - encoder_padding_mask.float()).transpose(0, 1)[..., None]
 
         # Calculating Fo using Feed-Forward Network
         Fo = self.ffn(self.ln2(Mo))
         Fo += Mo  # Residual connection
-        Fo = Fo * (1 - padding_mask.float())[..., None]
+        Fo = Fo * (1 - encoder_padding_mask.float()).transpose(0, 1)[..., None]
 
         return Fo
