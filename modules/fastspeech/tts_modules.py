@@ -389,7 +389,7 @@ class FastSpeech2Encoder(nn.Module):
         if extra_embed is not None:
             if lang_embed is not None:
                 if self.use_esm:
-                    dynamic_lang = self.esm(x, lang_embed)
+                    dynamic_lang = self.esm(x, lang_embed, padding_mask)
                     x = x + dynamic_lang + extra_embed
                 else:
                     x = x + extra_embed + lang_embed
@@ -442,7 +442,7 @@ class ESM(nn.Module):
         super(ESM, self).__init__()
 
         # Multi-Head Attention Layer
-        self.mh = nn.MultiheadAttention(d_model, nhead)
+        self.mh = nn.MultiheadAttention(d_model, nhead, bias=False)
 
         # Feed-forward Network
         self.ffn = nn.Sequential(
@@ -453,7 +453,7 @@ class ESM(nn.Module):
         self.ln1 = nn.LayerNorm(d_model)
         self.ln2 = nn.LayerNorm(d_model)
 
-    def forward(self, Eo, LP):
+    def forward(self, Eo, LP, padding_mask=None):
         # Applying Layer Normalization to LP
         LP_norm = self.ln1(LP)
 
@@ -462,11 +462,13 @@ class ESM(nn.Module):
             LP_norm = LP_norm.unsqueeze(0)
 
         # Calculating Mo using Multi-Head Attention
-        Mo, _ = self.mh(Eo, LP_norm, LP_norm)
+        Mo, _ = self.mh(Eo, LP_norm, LP_norm, key_padding_mask=padding_mask.transpose(0, 1))
         Mo += LP  # Residual connection
+        Mo = Mo * (1 - padding_mask.float())[..., None]
 
         # Calculating Fo using Feed-Forward Network
         Fo = self.ffn(self.ln2(Mo))
         Fo += Mo  # Residual connection
+        Fo = Fo * (1 - padding_mask.float())[..., None]
 
         return Fo
