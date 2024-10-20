@@ -2,16 +2,13 @@ import torch.nn
 from torch import nn
 
 from .convnext import ConvNeXtDecoder
-from .LYNXNetDecoder import LYNXNetDecoder
 from utils import filter_kwargs
 
 AUX_DECODERS = {
-    'convnext': ConvNeXtDecoder, 
-    'lynxnet': LYNXNetDecoder
+    'convnext': ConvNeXtDecoder
 }
 AUX_LOSSES = {
-    'convnext': nn.L1Loss, 
-    'lynxnet': nn.L1Loss
+    'convnext': nn.L1Loss
 }
 
 
