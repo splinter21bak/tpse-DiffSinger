@@ -1,3 +1,5 @@
+**详见**:https://github.com/KakaruHayate/DiffSinger/issues/1
+
 # DiffSinger (OpenVPI maintained version)
 
 [![arXiv](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2105.02446)
