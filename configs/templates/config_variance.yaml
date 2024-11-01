@@ -7,6 +7,7 @@ conv_block_kernel_size: 5
 conv_block_dropout_rate: 0.1
 conv_block_dilate: 4
 conv_block_layer: 2
+conv_block_add_norm: false
 
 dictionaries:
   zh: dictionaries/opencpop-extension.txt

@@ -151,7 +151,10 @@ class EncSALayer(nn.Module):
         self.conv_block_dropout_rate = hparams['conv_block_dropout_rate']
         self.conv_block_dilate = hparams['conv_block_dilate']
         self.conv_block_layer = hparams['conv_block_layer']
+        self.conv_block_add_norm = hparams['conv_block_add_norm']
         if self.use_conv_block:
+            if self.conv_block_add_norm:
+                self.layer_norm3 = LayerNorm(c)
             self.conv_blocks = torch.nn.ModuleList([
                 Conv_Block(
                     channels= c,
@@ -184,6 +187,8 @@ class EncSALayer(nn.Module):
                 x_conv = block(x)
                 x_convs = x_convs + x_conv
             x = residual + x_convs + x_aten
+            if self.conv_block_add_norm:
+                x = self.layer_norm3(x)
         else:
             x = residual + x_aten
         x = x * (1 - encoder_padding_mask.float()).transpose(0, 1)[..., None]
