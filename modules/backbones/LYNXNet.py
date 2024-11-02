@@ -54,7 +54,7 @@ class LYNXConvModule(nn.Module):
         pad = kernel_size // 2
         return (pad, pad - (kernel_size + 1) % 2)
 
-    def __init__(self, dim, expansion_factor, kernel_size=31, in_norm=False, activation='PReLU', dropout=0.):
+    def __init__(self, dim, expansion_factor, kernel_size=31, activation='PReLU', dropout=0.):
         super().__init__()
         inner_dim = dim * expansion_factor
         activation_classes = {
@@ -88,11 +88,11 @@ class LYNXConvModule(nn.Module):
 
 
 class LYNXNetResidualLayer(nn.Module):
-    def __init__(self, dim_cond, dim, expansion_factor, kernel_size=31, in_norm=False, activation='PReLU', dropout=0.):
+    def __init__(self, dim_cond, dim, expansion_factor, kernel_size=31, activation='PReLU', dropout=0.):
         super().__init__()
         self.diffusion_projection = nn.Conv1d(dim, dim, 1)
         self.conditioner_projection = nn.Conv1d(dim_cond, dim, 1)
-        self.convmodule = LYNXConvModule(dim=dim, expansion_factor=expansion_factor, kernel_size=kernel_size, in_norm=in_norm, activation=activation, dropout=dropout)
+        self.convmodule = LYNXConvModule(dim=dim, expansion_factor=expansion_factor, kernel_size=kernel_size, activation=activation, dropout=dropout)
 
     def forward(self, x, conditioner, diffusion_step):
         res_x = x.transpose(1, 2)
@@ -106,7 +106,7 @@ class LYNXNetResidualLayer(nn.Module):
 
 
 class LYNXNet(nn.Module):
-    def __init__(self, in_dims, n_feats, *, n_layers=6, n_chans=512, n_dilates=2, in_norm=False, activation='PReLU', dropout=0.):
+    def __init__(self, in_dims, n_feats, *, num_layers=6, num_channels=512, expansion_factor=2, kernel_size=31, activation='PReLU', dropout=0.):
         """
         LYNXNet(Linear Gated Depthwise Separable Convolution Network)
         TIPS:You can control the style of the generated results by modifying the 'activation', 
@@ -115,29 +115,30 @@ class LYNXNet(nn.Module):
             - 'ReLU' : Contrary to 'SiLU', Voice will be weakened
         """
         super().__init__()
-        self.input_projection = nn.Conv1d(in_dims * n_feats, n_chans, 1)
+        self.in_dims = in_dims
+        self.n_feats = n_feats
+        self.input_projection = nn.Conv1d(in_dims * n_feats, num_channels, 1)
         self.diffusion_embedding = nn.Sequential(
-            SinusoidalPosEmb(n_chans),
-            nn.Linear(n_chans, n_chans * 4),
+            SinusoidalPosEmb(num_channels),
+            nn.Linear(num_channels, num_channels * 4),
             nn.GELU(),
-            nn.Linear(n_chans * 4, n_chans),
+            nn.Linear(num_channels * 4, num_channels),
         )
         self.residual_layers = nn.ModuleList(
             [
                 LYNXNetResidualLayer(
                     dim_cond=hparams['hidden_size'], 
-                    dim=n_chans, 
-                    expansion_factor=n_dilates, 
-                    kernel_size=31, 
-                    in_norm=in_norm, 
+                    dim=num_channels, 
+                    expansion_factor=expansion_factor, 
+                    kernel_size=kernel_size, 
                     activation=activation, 
                     dropout=dropout
                 )
-                for i in range(n_layers)
+                for i in range(num_layers)
             ]
         )
-        self.norm = nn.LayerNorm(n_chans)
-        self.output_projection = nn.Conv1d(n_chans, in_dims * n_feats, kernel_size=1)
+        self.norm = nn.LayerNorm(num_channels)
+        self.output_projection = nn.Conv1d(num_channels, in_dims * n_feats, kernel_size=1)
         nn.init.zeros_(self.output_projection.weight)
     
     def forward(self, spec, diffusion_step, cond):
@@ -148,14 +149,10 @@ class LYNXNet(nn.Module):
         :return:
         """
         
-        # To keep compatibility with DiffSVC, [B, 1, M, T]
-        x = spec
-        use_4_dim = False
-        if x.dim() == 4:
-            x = x[:, 0]
-            use_4_dim = True
-
-        assert x.dim() == 3, f"mel must be 3 dim tensor, but got {x.dim()}"
+        if self.n_feats == 1:
+            x = spec.squeeze(1)  # [B, M, T]
+        else:
+            x = spec.flatten(start_dim=1, end_dim=2)  # [B, F x M, T]
 
         x = self.input_projection(x)  # x [B, residual_channel, T]
         x = F.gelu(x)
@@ -171,4 +168,11 @@ class LYNXNet(nn.Module):
         # MLP and GLU
         x = self.output_projection(x)  # [B, 128, T]
         
-        return x[:, None] if use_4_dim else x
+        if self.n_feats == 1:
+            x = x[:, None, :, :]
+        else:
+            # This is the temporary solution since PyTorch 1.13
+            # does not support exporting aten::unflatten to ONNX
+            # x = x.unflatten(dim=1, sizes=(self.n_feats, self.in_dims))
+            x = x.reshape(-1, self.n_feats, self.in_dims, x.shape[2])
+        return x
