@@ -68,6 +68,14 @@ class ParameterAdaptorModule(torch.nn.Module):
             f'Total number of repeat bins must be divisible by number of ' \
             f'variance parameters ({len(self.variance_prediction_list)}).'
         repeat_bins = total_repeat_bins // len(self.variance_prediction_list)
+        backbone_type = variances_hparams.get('backbone_type', 
+                                variances_hparams.get('backbone_type', 
+                                variances_hparams.get('diff_decoder_type', 'wavenet')))
+        backbone_args = variances_hparams.get('backbone_args', {
+                'num_layers': variances_hparams.get('residual_layers'),
+                'num_channels': variances_hparams.get('residual_channels'),
+                'dilation_cycle_length': variances_hparams.get('dilation_cycle_length'),
+        } if backbone_type == 'wavenet' else None)
         kwargs = filter_kwargs(
             {
                 'ranges': ranges,
@@ -75,12 +83,8 @@ class ParameterAdaptorModule(torch.nn.Module):
                 'repeat_bins': repeat_bins,
                 'timesteps': hparams.get('timesteps'),
                 'time_scale_factor': hparams.get('time_scale_factor'),
-                'backbone_type': hparams.get('backbone_type', hparams.get('diff_decoder_type')),
-                'backbone_args': {
-                    'n_layers': variances_hparams['residual_layers'],
-                    'n_chans': variances_hparams['residual_channels'],
-                    'n_dilates': variances_hparams['dilation_cycle_length'],
-                }
+                'backbone_type': backbone_type,
+                'backbone_args': backbone_args
             },
             cls
         )
