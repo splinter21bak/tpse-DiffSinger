@@ -150,7 +150,7 @@ class LYNXNet(nn.Module):
         """
         
         if self.n_feats == 1:
-            x = spec.squeeze(1)  # [B, M, T]
+            x = spec[:, 0]  # [B, M, T]
         else:
             x = spec.flatten(start_dim=1, end_dim=2)  # [B, F x M, T]
 
