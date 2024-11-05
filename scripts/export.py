@@ -14,6 +14,16 @@ sys.path.insert(0, str(root_dir))
 from utils.hparams import set_hparams, hparams
 
 
+def check_pytorch_version():
+    version = torch.__version__
+    print(f"PyTorch version: {version}")
+    major, minor, _ = version.split('.')
+    if major != '1' and minor != '13':
+        raise RuntimeError(f"Unsupported PyTorch Version: {version}. need 1.13.x.")
+    else:
+        pass
+
+
 def find_exp(exp):
     if not (root_dir / 'checkpoints' / exp).exists():
         for subdir in (root_dir / 'checkpoints').iterdir():
@@ -291,4 +301,5 @@ def nsf_hifigan(
 
 
 if __name__ == '__main__':
+    check_pytorch_version()
     main()
