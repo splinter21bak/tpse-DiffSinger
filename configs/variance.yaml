@@ -107,7 +107,6 @@ schedule_type: 'linear'
 K_step: 1000
 timesteps: 1000
 max_beta: 0.02
-backbone_type: 'wavenet'
 main_loss_type: l2
 main_loss_log_norm: true
 sampling_algorithm: euler
