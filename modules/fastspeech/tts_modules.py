@@ -76,6 +76,7 @@ class DurationPredictor(torch.nn.Module):
         self.offset = offset
         self.conv = torch.nn.ModuleList()
         self.kernel_size = kernel_size
+        self.res_conv = torch.nn.Conv1d(in_dims, n_chans, 1)
         for idx in range(n_layers):
             in_chans = in_dims if idx == 0 else n_chans
             self.conv.append(torch.nn.Sequential(
@@ -121,10 +122,14 @@ class DurationPredictor(torch.nn.Module):
         xs = xs.transpose(1, -1)  # (B, idim, Tmax)
         masks = 1 - x_masks.float()
         masks_ = masks[:, None, :]
-        for f in self.conv:
+        for idx, f in self.conv:
+            residual = xs
+            if idx == 0:
+                residual = self.res_conv(residual)
             xs = f(xs)  # (B, C, Tmax)
             if x_masks is not None:
                 xs = xs * masks_
+            xs += residual
         xs = self.linear(xs.transpose(1, -1))  # [B, T, C]
         xs = xs * masks[:, :, None]  # (B, T, C)
 
