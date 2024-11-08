@@ -68,7 +68,8 @@ dur_prediction_args:
   arch: fs2
   hidden_size: 512
   dropout: 0.1
-  num_layers: 5
+  # when dur predictor has residual, we donot need 5 layer maybe?
+  num_layers: 3 
   kernel_size: 3
   log_offset: 1.0
   loss_type: mse
