@@ -122,7 +122,7 @@ class DurationPredictor(torch.nn.Module):
         xs = xs.transpose(1, -1)  # (B, idim, Tmax)
         masks = 1 - x_masks.float()
         masks_ = masks[:, None, :]
-        for idx, f in self.conv:
+        for idx, f in enumerate(self.conv):
             residual = xs
             if idx == 0:
                 residual = self.res_conv(residual)
