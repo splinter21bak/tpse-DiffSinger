@@ -465,11 +465,11 @@ class ESM(nn.Module):
         # Calculating Mo using Multi-Head Attention
         Mo, _ = self.mh(Eo, LP_norm, LP_norm, key_padding_mask=padding_mask)
         Mo += LP  # Residual connection
-        Mo = Mo * (1 - encoder_padding_mask.float()).transpose(0, 1)[..., None]
+        Mo = Mo * (1 - padding_mask.float()).transpose(0, 1)[..., None]
 
         # Calculating Fo using Feed-Forward Network
         Fo = self.ffn(self.ln2(Mo))
         Fo += Mo  # Residual connection
-        Fo = Fo * (1 - encoder_padding_mask.float()).transpose(0, 1)[..., None]
+        Fo = Fo * (1 - padding_mask.float()).transpose(0, 1)[..., None]
 
         return Fo
