@@ -446,7 +446,7 @@ class ESM(nn.Module):
 
         # Feed-forward Network
         self.ffn = nn.Sequential(
-            nn.Linear(d_model, d_model*4), nn.ReLU(), nn.Linear(d_model*4, d_model)
+            nn.Linear(d_model, d_model*4), nn.GELU(), nn.Linear(d_model*4, d_model)
         )
 
         # Layer Normalization Layers
