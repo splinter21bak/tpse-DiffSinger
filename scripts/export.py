@@ -15,13 +15,10 @@ from utils.hparams import set_hparams, hparams
 
 
 def check_pytorch_version():
-    version = torch.__version__
-    print(f"PyTorch version: {version}")
-    major, minor, _ = version.split('.')
-    if major != '1' and minor != '13':
-        raise RuntimeError(f"Unsupported PyTorch Version: {version}. need 1.13.x.")
-    else:
-        pass
+    # Require PyTorch version to be exactly 1.13.x
+    if torch.__version__.startswith('1.13.'):
+        return
+    raise RuntimeError('This script requires PyTorch 1.13.x. Please install the correct version.')
 
 
 def find_exp(exp):

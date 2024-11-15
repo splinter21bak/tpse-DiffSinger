@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import torch
 
+import modules.compat as compat
 from modules.core.ddpm import MultiVarianceDiffusion
 from utils import filter_kwargs
 from utils.hparams import hparams
@@ -68,14 +69,8 @@ class ParameterAdaptorModule(torch.nn.Module):
             f'Total number of repeat bins must be divisible by number of ' \
             f'variance parameters ({len(self.variance_prediction_list)}).'
         repeat_bins = total_repeat_bins // len(self.variance_prediction_list)
-        backbone_type = variances_hparams.get('backbone_type', 
-                                variances_hparams.get('backbone_type', 
-                                variances_hparams.get('diff_decoder_type', 'wavenet')))
-        backbone_args = variances_hparams.get('backbone_args', {
-                'num_layers': variances_hparams.get('residual_layers'),
-                'num_channels': variances_hparams.get('residual_channels'),
-                'dilation_cycle_length': variances_hparams.get('dilation_cycle_length'),
-        } if backbone_type == 'wavenet' else None)
+        backbone_type = compat.get_backbone_type(hparams, nested_config=variances_hparams)
+        backbone_args = compat.get_backbone_args(variances_hparams, backbone_type=backbone_type)
         kwargs = filter_kwargs(
             {
                 'ranges': ranges,

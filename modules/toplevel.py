@@ -5,6 +5,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from torch import Tensor
 
+import modules.compat as compat
 from basics.base_module import CategorizedModule
 from modules.aux_decoder import AuxDecoderAdaptor
 from modules.commons.common_layers import (
@@ -53,12 +54,8 @@ class DiffSingerAcoustic(CategorizedModule, ParameterAdaptorModule):
                 aux_decoder_args=self.shallow_args['aux_decoder_args']
             )
         self.diffusion_type = hparams.get('diffusion_type', 'ddpm')
-        self.backbone_type = hparams.get('backbone_type', hparams.get('diff_decoder_type', 'wavenet'))
-        self.backbone_args = hparams.get('backbone_args', {
-                'num_layers': hparams.get('residual_layers'),
-                'num_channels': hparams.get('residual_channels'),
-                'dilation_cycle_length': hparams.get('dilation_cycle_length'),
-        } if self.backbone_type == 'wavenet' else None)
+        self.backbone_type = compat.get_backbone_type(hparams)
+        self.backbone_args = compat.get_backbone_args(hparams, self.backbone_type)
         if self.diffusion_type == 'ddpm':
             self.diffusion = GaussianDiffusion(
                 out_dims=out_dims,
@@ -155,14 +152,8 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
 
             self.pitch_retake_embed = Embedding(2, hparams['hidden_size'])
             pitch_hparams = hparams['pitch_prediction_args']
-            self.pitch_backbone_type = pitch_hparams.get('backbone_type',
-                                    hparams.get('backbone_type', 
-                                    hparams.get('diff_decoder_type', 'wavenet')))
-            self.pitch_backbone_args = pitch_hparams.get('backbone_args', {
-                'num_layers': pitch_hparams.get('residual_layers'),
-                'num_channels': pitch_hparams.get('residual_channels'),
-                'dilation_cycle_length': pitch_hparams.get('dilation_cycle_length'),
-            } if self.pitch_backbone_type == 'wavenet' else None)
+            self.pitch_backbone_type = compat.get_backbone_type(hparams, nested_config=pitch_hparams)
+            self.pitch_backbone_args = compat.get_backbone_args(hparams, backbone_type=self.pitch_backbone_type)
             if self.diffusion_type == 'ddpm':
                 self.pitch_predictor = PitchDiffusion(
                     vmin=pitch_hparams['pitd_norm_min'],
