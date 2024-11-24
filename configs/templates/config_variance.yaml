@@ -1,6 +1,10 @@
 base_config:
   - configs/variance.yaml
 
+develop_option:
+  use_esm: true
+  dur_res: true
+
 dictionaries:
   zh: dictionaries/opencpop-extension.txt
 extra_phonemes: []
