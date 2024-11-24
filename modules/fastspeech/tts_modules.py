@@ -133,7 +133,7 @@ class DurationPredictor(torch.nn.Module):
                 if idx == 0:
                     residual = self.res_conv(residual)
                 xs = f(xs)  # (B, C, Tmax)
-                xs = x + residual
+                xs = xs + residual
                 if x_masks is not None:
                     xs = xs * masks_
         else:
