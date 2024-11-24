@@ -3,6 +3,7 @@ base_config:
 
 develop_option:
   use_esm: true
+  lynx_res_with_cond: true
 
 dictionaries:
   zh: dictionaries/opencpop-extension.txt

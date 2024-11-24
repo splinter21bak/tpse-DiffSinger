@@ -4,6 +4,7 @@ base_config:
 develop_option:
   use_esm: true
   use_dur_res: true
+  lynx_res_with_cond: true
 
 dictionaries:
   zh: dictionaries/opencpop-extension.txt
@@ -72,7 +73,7 @@ dur_prediction_args:
   arch: fs2
   hidden_size: 512
   dropout: 0.1
-  num_layers: 5
+  num_layers: 3
   kernel_size: 3
   log_offset: 1.0
   loss_type: mse

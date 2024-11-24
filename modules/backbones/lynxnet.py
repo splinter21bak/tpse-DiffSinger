@@ -75,18 +75,26 @@ class LYNXConvModule(nn.Module):
 class LYNXNetResidualLayer(nn.Module):
     def __init__(self, dim_cond, dim, expansion_factor, kernel_size=31, activation='PReLU', dropout=0.):
         super().__init__()
+        self.develop_option = hparams.get('develop_option', {})
+        self.lynx_res_with_cond=self.develop_option['lynx_res_with_cond']
         self.diffusion_projection = nn.Conv1d(dim, dim, 1)
         self.conditioner_projection = nn.Conv1d(dim_cond, dim, 1)
         self.convmodule = LYNXConvModule(dim=dim, expansion_factor=expansion_factor, kernel_size=kernel_size,
                                          activation=activation, dropout=dropout)
 
     def forward(self, x, conditioner, diffusion_step):
-        res_x = x.transpose(1, 2)
-        x = x + self.diffusion_projection(diffusion_step) + self.conditioner_projection(conditioner)
-        x = x.transpose(1, 2)
-        x = self.convmodule(x)  # (#batch, dim, length)
-        x = x + res_x
-        x = x.transpose(1, 2)
+        if self.lynx_res_with_cond:
+            x = x + self.diffusion_projection(diffusion_step) + self.conditioner_projection(conditioner)
+            x = x.transpose(1, 2)
+            x = x + self.convmodule(x)  # (#batch, dim, length)
+            x = x.transpose(1, 2)
+        else:
+            res_x = x.transpose(1, 2)
+            x = x + self.diffusion_projection(diffusion_step) + self.conditioner_projection(conditioner)
+            x = x.transpose(1, 2)
+            x = self.convmodule(x)  # (#batch, dim, length)
+            x = x + res_x
+            x = x.transpose(1, 2)
 
         return x  # (#batch, length, dim)
 
