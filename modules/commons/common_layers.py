@@ -183,3 +183,44 @@ class SinusoidalPosEmb(nn.Module):
         emb = x[:, None] * emb[None, :]
         emb = torch.cat((emb.sin(), emb.cos()), dim=-1)
         return emb
+
+
+class ESM(nn.Module):
+    # Embedding Strength Modulator
+    def __init__(self, d_model, nhead=8):
+        super(ESM, self).__init__()
+
+        # Multi-Head Attention Layer
+        self.mh = nn.MultiheadAttention(d_model, nhead, bias=False)
+
+        # Feed-forward Network
+        self.ffn = nn.Sequential(
+            XavierUniformInitLinear(d_model, d_model*4), 
+            nn.GELU(), 
+            XavierUniformInitLinear(d_model*4, d_model)
+        )
+
+        # Layer Normalization Layers
+        self.ln1 = nn.LayerNorm(d_model)
+        self.ln2 = nn.LayerNorm(d_model)
+
+    def forward(self, Eo, LP, padding_mask=None):
+        padding_mask = padding_mask.transpose(0, 1)
+        # Applying Layer Normalization to LP
+        LP_norm = self.ln1(LP)
+
+        if LP_norm.dim() < 3:
+            # Add a new dimension at the beginning for infer
+            LP_norm = LP_norm.unsqueeze(0)
+
+        # Calculating Mo using Multi-Head Attention
+        Mo, _ = self.mh(Eo, LP_norm, LP_norm, key_padding_mask=padding_mask)
+        Mo += LP  # Residual connection
+        Mo = Mo * (1 - padding_mask.float()).transpose(0, 1)[..., None]
+
+        # Calculating Fo using Feed-Forward Network
+        Fo = self.ffn(self.ln2(Mo))
+        Fo += Mo  # Residual connection
+        Fo = Fo * (1 - padding_mask.float()).transpose(0, 1)[..., None]
+
+        return Fo

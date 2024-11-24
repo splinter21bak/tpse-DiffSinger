@@ -4,8 +4,10 @@ import torch
 import torch.nn as nn
 from torch.nn import functional as F
 
-from modules.commons.common_layers import SinusoidalPositionalEmbedding, EncSALayer
+from modules.commons.common_layers import SinusoidalPositionalEmbedding, EncSALayer, ESM
 from modules.commons.espnet_positional_embedding import RelPositionalEncoding
+
+from utils.hparams import hparams
 
 DEFAULT_MAX_SOURCE_POSITIONS = 2000
 DEFAULT_MAX_TARGET_POSITIONS = 2000
@@ -73,6 +75,10 @@ class DurationPredictor(torch.nn.Module):
             offset (float, optional): Offset value to avoid nan in log domain.
         """
         super(DurationPredictor, self).__init__()
+        self.develop_option = hparams.get('develop_option', {})
+        self.dur_res=self.develop_option['use_dur_res']
+        if self.dur_res:
+             self.res_conv = torch.nn.Conv1d(in_dims, n_chans, 1)
         self.offset = offset
         self.conv = torch.nn.ModuleList()
         self.kernel_size = kernel_size
@@ -121,10 +127,20 @@ class DurationPredictor(torch.nn.Module):
         xs = xs.transpose(1, -1)  # (B, idim, Tmax)
         masks = 1 - x_masks.float()
         masks_ = masks[:, None, :]
-        for f in self.conv:
-            xs = f(xs)  # (B, C, Tmax)
-            if x_masks is not None:
-                xs = xs * masks_
+        if self.dur_res:
+            for idx, f in enumerate(self.conv):
+                residual = xs
+                if idx == 0:
+                    residual = self.res_conv(residual)
+                xs = f(xs)  # (B, C, Tmax)
+                xs = x + residual
+                if x_masks is not None:
+                    xs = xs * masks_
+        else:
+            for f in self.conv:
+                xs = f(xs)  # (B, C, Tmax)
+                if x_masks is not None:
+                    xs = xs * masks_
         xs = self.linear(xs.transpose(1, -1))  # [B, T, C]
         xs = xs * masks[:, :, None]  # (B, T, C)
 
@@ -353,7 +369,7 @@ def mel2ph_to_dur(mel2ph, T_txt, max_dur=None):
 class FastSpeech2Encoder(nn.Module):
     def __init__(self, hidden_size, num_layers,
                  ffn_kernel_size=9, ffn_act='gelu',
-                 dropout=None, num_heads=2, use_pos_embed=True, rel_pos=True):
+                 dropout=None, num_heads=2, use_pos_embed=True, rel_pos=True, use_esm=False):
         super().__init__()
         self.num_layers = num_layers
         embed_dim = self.hidden_size = hidden_size
@@ -379,12 +395,22 @@ class FastSpeech2Encoder(nn.Module):
             self.embed_positions = SinusoidalPositionalEmbedding(
                 hidden_size, self.padding_idx, init_size=DEFAULT_MAX_TARGET_POSITIONS,
             )
+        self.use_esm = use_esm
+        if self.use_esm:
+            self.esm = ESM(d_model=self.hidden_size, nhead=8)
 
-    def forward_embedding(self, main_embed, extra_embed=None, padding_mask=None):
+    def forward_embedding(self, main_embed, lang_embed=None, extra_embed=None, padding_mask=None):
         # embed tokens and positions
         x = self.embed_scale * main_embed
         if extra_embed is not None:
-            x = x + extra_embed
+            if lang_embed is not None:
+                if self.use_esm:
+                    dynamic_lang = self.esm(x, lang_embed)
+                    x = x + dynamic_lang + extra_embed
+                else:
+                    x = x + extra_embed + lang_embed
+            else:
+                x = x + extra_embed
         if self.use_pos_embed:
             if self.rel_pos:
                 x = self.embed_positions(x)
@@ -394,8 +420,8 @@ class FastSpeech2Encoder(nn.Module):
         x = F.dropout(x, p=self.dropout, training=self.training)
         return x
 
-    def forward(self, main_embed, extra_embed, padding_mask, attn_mask=None, return_hiddens=False):
-        x = self.forward_embedding(main_embed, extra_embed, padding_mask=padding_mask)  # [B, T, H]
+    def forward(self, main_embed, lang_embed, extra_embed, padding_mask, attn_mask=None, return_hiddens=False):
+        x = self.forward_embedding(main_embed, lang_embed, extra_embed, padding_mask=padding_mask)  # [B, T, H]
         nonpadding_mask_TB = 1 - padding_mask.transpose(0, 1).float()[:, :, None]  # [T, B, 1]
 
         # NOTICE:
