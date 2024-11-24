@@ -405,7 +405,7 @@ class FastSpeech2Encoder(nn.Module):
         if extra_embed is not None:
             if lang_embed is not None:
                 if self.use_esm:
-                    dynamic_lang = self.esm(x, lang_embed)
+                    dynamic_lang = self.esm(x, lang_embed, padding_mask)
                     x = x + dynamic_lang + extra_embed
                 else:
                     x = x + extra_embed + lang_embed
