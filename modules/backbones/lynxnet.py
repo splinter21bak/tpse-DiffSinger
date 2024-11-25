@@ -10,6 +10,12 @@ from modules.commons.common_layers import SinusoidalPosEmb
 from utils.hparams import hparams
 
 
+class Conv1d(torch.nn.Conv1d):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        nn.init.kaiming_normal_(self.weight)
+
+
 class SwiGLU(nn.Module):
     # Swish-Applies the gated linear unit function.
     def __init__(self, dim=-1):
@@ -112,7 +118,7 @@ class LYNXNet(nn.Module):
         super().__init__()
         self.in_dims = in_dims
         self.n_feats = n_feats
-        self.input_projection = nn.Conv1d(in_dims * n_feats, num_channels, 1)
+        self.input_projection = Conv1d(in_dims * n_feats, num_channels, 1)
         self.diffusion_embedding = nn.Sequential(
             SinusoidalPosEmb(num_channels),
             nn.Linear(num_channels, num_channels * 4),
@@ -133,7 +139,7 @@ class LYNXNet(nn.Module):
             ]
         )
         self.norm = nn.LayerNorm(num_channels)
-        self.output_projection = nn.Conv1d(num_channels, in_dims * n_feats, kernel_size=1)
+        self.output_projection = Conv1d(num_channels, in_dims * n_feats, kernel_size=1)
         nn.init.zeros_(self.output_projection.weight)
 
     def forward(self, spec, diffusion_step, cond):
