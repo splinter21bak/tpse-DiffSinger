@@ -51,16 +51,24 @@ augmentation_args:
     range: [0.5, 2.]
     scale: 0.75
 
-residual_channels: 512
-residual_layers: 20
-
-# shallow diffusion
+# diffusion and shallow diffusion
 diffusion_type: reflow
 use_shallow_diffusion: true
 T_start: 0.4
 T_start_infer: 0.4
 K_step: 300
 K_step_infer: 300
+backbone_type: 'lynxnet'
+backbone_args:
+  num_channels: 1024
+  num_layers: 6
+  kernel_size: 31
+  dropout_rate: 0.0
+#backbone_type: 'wavenet'
+#backbone_args:
+#  num_channels: 512
+#  num_layers: 20
+#  dilation_cycle_length: 4
 shallow_diffusion_args:
   train_aux_decoder: true
   train_diffusion: true

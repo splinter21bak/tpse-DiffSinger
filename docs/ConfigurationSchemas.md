@@ -201,6 +201,24 @@ Scale ratio of random time stretching augmentation.
 <tr><td align="center"><b>default</b></td><td>0.75</td>
 </tbody></table>
 
+### backbone_args
+
+Keyword arguments for the backbone of main decoder module.
+
+<table><tbody>
+<tr><td align="center"><b>visibility</b></td><td>acoustic, variance</td>
+<tr><td align="center"><b>scope</b></td><td>nn</td>
+<tr><td align="center"><b>type</b></td><td>dict</td>
+</tbody></table>
+
+Some available arguments are listed below.
+
+|     argument name     | for backbone type |                                                 description                                                 |
+|:---------------------:|:-----------------:|:-----------------------------------------------------------------------------------------------------------:|
+|      num_layers       |  wavenet/lynxnet  |                               Number of layer blocks, or depth of the network                               |
+|     num_channels      |  wavenet/lynxnet  |                                 Number of channels, or width of the network                                 |
+| dilation_cycle_length |      wavenet      | Length k of the cycle $2^0, 2^1 ...., 2^k$ of convolution dilation factors through WaveNet residual blocks. |
+
 ### backbone_type
 
 Backbone type of the main decoder/predictor module.
@@ -208,9 +226,10 @@ Backbone type of the main decoder/predictor module.
 <table><tbody>
 <tr><td align="center"><b>visibility</b></td><td>acoustic, variance</td>
 <tr><td align="center"><b>scope</b></td><td>nn</td>
-<tr><td align="center"><b>customizability</b></td><td>reserved</td>
+<tr><td align="center"><b>customizability</b></td><td>normal</td>
 <tr><td align="center"><b>type</b></td><td>str</td>
-<tr><td align="center"><b>default</b></td><td>wavenet</td>
+<tr><td align="center"><b>default</b></td><td>lynxnet</td>
+<tr><td align="center"><b>constraints</b></td><td>Choose from 'wavenet', 'lynxnet'.</td>
 </tbody></table>
 
 ### base_config
@@ -416,18 +435,6 @@ The type of ODE-based generative model algorithm. The following models are curre
 <tr><td align="center"><b>type</b></td><td>str</td>
 <tr><td align="center"><b>default</b></td><td>reflow</td>
 <tr><td align="center"><b>constraints</b></td><td>Choose from 'ddpm', 'reflow'.</td>
-</tbody></table>
-
-### dilation_cycle_length
-
-Length k of the cycle $2^0, 2^1 ...., 2^k$ of convolution dilation factors through WaveNet residual blocks.
-
-<table><tbody>
-<tr><td align="center"><b>visibility</b></td><td>acoustic</td>
-<tr><td align="center"><b>scope</b></td><td>nn</td>
-<tr><td align="center"><b>customizability</b></td><td>not recommended</td>
-<tr><td align="center"><b>type</b></td><td>int</td>
-<tr><td align="center"><b>default</b></td><td>4</td>
 </tbody></table>
 
 ### dropout
@@ -1273,13 +1280,21 @@ Arguments for pitch prediction.
 <tr><td align="center"><b>type</b></td><td>dict</td>
 </tbody></table>
 
-### pitch_prediction_args.dilation_cycle_length
+### pitch_prediction_args.backbone_args
 
-Equivalent to [dilation_cycle_length](#dilation_cycle_length) but only for the pitch predictor model.
+Equivalent to [backbone_args](#backbone_args) but only for the pitch predictor model.  If not set, use the root backbone type.
 
 <table><tbody>
 <tr><td align="center"><b>visibility</b></td><td>variance</td>
-<tr><td align="center"><b>default</b></td><td>5</td>
+</tbody></table>
+
+### pitch_prediction_args.backbone_type
+
+Equivalent to [backbone_type](#backbone_type) but only for the pitch predictor model.
+
+<table><tbody>
+<tr><td align="center"><b>visibility</b></td><td>variance</td>
+<tr><td align="center"><b>default</b></td><td>wavenet</td>
 </tbody></table>
 
 ### pitch_prediction_args.pitd_clip_max
@@ -1338,24 +1353,6 @@ Number of repeating bins in the pitch predictor.
 <tr><td align="center"><b>customizability</b></td><td>recommended</td>
 <tr><td align="center"><b>type</b></td><td>int</td>
 <tr><td align="center"><b>default</b></td><td>64</td>
-</tbody></table>
-
-### pitch_prediction_args.residual_channels
-
-Equivalent to [residual_channels](#residual_channels) but only for the pitch predictor.
-
-<table><tbody>
-<tr><td align="center"><b>visibility</b></td><td>variance</td>
-<tr><td align="center"><b>default</b></td><td>256</td>
-</tbody></table>
-
-### pitch_prediction_args.residual_layers
-
-Equivalent to [residual_layers](#residual_layers) but only for the pitch predictor.
-
-<table><tbody>
-<tr><td align="center"><b>visibility</b></td><td>variance</td>
-<tr><td align="center"><b>default</b></td><td>20</td>
 </tbody></table>
 
 ### pl_trainer_accelerator
@@ -1523,30 +1520,6 @@ Whether to use relative positional encoding in FastSpeech2 module.
 <tr><td align="center"><b>customizability</b></td><td>not recommended</td>
 <tr><td align="center"><b>type</b></td><td>boolean</td>
 <tr><td align="center"><b>default</b></td><td>true</td>
-</tbody></table>
-
-### residual_channels
-
-Number of dilated convolution channels in residual blocks in WaveNet.
-
-<table><tbody>
-<tr><td align="center"><b>visibility</b></td><td>acoustic</td>
-<tr><td align="center"><b>scope</b></td><td>nn</td>
-<tr><td align="center"><b>customizability</b></td><td>normal</td>
-<tr><td align="center"><b>type</b></td><td>int</td>
-<tr><td align="center"><b>default</b></td><td>512</td>
-</tbody></table>
-
-### residual_layers
-
-Number of residual blocks in WaveNet.
-
-<table><tbody>
-<tr><td align="center"><b>visibility</b></td><td>acoustic</td>
-<tr><td align="center"><b>scope</b></td><td>nn</td>
-<tr><td align="center"><b>customizability</b></td><td>normal</td>
-<tr><td align="center"><b>type</b></td><td>int</td>
-<tr><td align="center"><b>default</b></td><td>20</td>
 </tbody></table>
 
 ### sampler_frame_count_grid
@@ -2034,13 +2007,21 @@ Arguments for prediction of variance parameters other than pitch, like energy, b
 <tr><td align="center"><b>type</b></td><td>dict</td>
 </tbody></table>
 
-### variances_prediction_args.dilation_cycle_length
+### variances_prediction_args.backbone_args
 
-Equivalent to [dilation_cycle_length](#dilation_cycle_length) but only for the multi-variance predictor model.
+Equivalent to [backbone_args](#backbone_args) but only for the multi-variance predictor.
 
 <table><tbody>
 <tr><td align="center"><b>visibility</b></td><td>variance</td>
-<tr><td align="center"><b>default</b></td><td>4</td>
+</tbody></table>
+
+### variances_prediction_args.backbone_type
+
+Equivalent to [backbone_type](#backbone_type) but only for the multi-variance predictor model. If not set, use the root backbone type.
+
+<table><tbody>
+<tr><td align="center"><b>visibility</b></td><td>variance</td>
+<tr><td align="center"><b>default</b></td><td>wavenet</td>
 </tbody></table>
 
 ### variances_prediction_args.total_repeat_bins
@@ -2053,24 +2034,6 @@ Total number of repeating bins in the multi-variance predictor. Repeating bins a
 <tr><td align="center"><b>customizability</b></td><td>recommended</td>
 <tr><td align="center"><b>type</b></td><td>int</td>
 <tr><td align="center"><b>default</b></td><td>48</td>
-</tbody></table>
-
-### variances_prediction_args.residual_channels
-
-Equivalent to [residual_channels](#residual_channels) but only for the multi-variance predictor.
-
-<table><tbody>
-<tr><td align="center"><b>visibility</b></td><td>variance</td>
-<tr><td align="center"><b>default</b></td><td>192</td>
-</tbody></table>
-
-### variances_prediction_args.residual_layers
-
-Equivalent to [residual_layers](#residual_layers) but only for the multi-variance predictor.
-
-<table><tbody>
-<tr><td align="center"><b>visibility</b></td><td>variance</td>
-<tr><td align="center"><b>default</b></td><td>10</td>
 </tbody></table>
 
 ### vocoder
