@@ -81,8 +81,9 @@ class LYNXNetResidualLayer(nn.Module):
                                          activation=activation, dropout=dropout)
 
     def forward(self, x, conditioner, diffusion_step):
+        x = x + self.conditioner_projection(conditioner)
         res_x = x.transpose(1, 2)
-        x = x + self.diffusion_projection(diffusion_step) + self.conditioner_projection(conditioner)
+        x = x + self.diffusion_projection(diffusion_step)
         x = x.transpose(1, 2)
         x = self.convmodule(x)  # (#batch, dim, length)
         x = x + res_x
@@ -142,7 +143,7 @@ class LYNXNet(nn.Module):
             x = spec.flatten(start_dim=1, end_dim=2)  # [B, F x M, T]
 
         x = self.input_projection(x)  # x [B, residual_channel, T]
-        x = F.gelu(x)
+        # x = F.gelu(x)
 
         diffusion_step = self.diffusion_embedding(diffusion_step).unsqueeze(-1)
 
