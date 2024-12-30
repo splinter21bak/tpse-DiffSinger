@@ -114,6 +114,16 @@ variances_prediction_args:
 #   num_layers: 6
 #   num_channels: 384
 
+train_tpse: true
+tpse_args:
+  gst_tokens: 10
+  gst_heads: 4
+  gst_gru_layers: 1
+  gst_gru_hidden_size: 128
+  tpse_fc_layers: 1
+  tpse_gru_layers: 1
+  tpse_gru_hidden_size: 128
+
 lambda_dur_loss: 1.0
 lambda_pitch_loss: 1.0
 lambda_var_loss: 1.0

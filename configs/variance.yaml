@@ -20,10 +20,14 @@ datasets:
       - '2100'
 
 audio_sample_rate: 44100
+audio_num_mel_bins: 128
 hop_size: 512            # Hop size.
 fft_size: 2048           # FFT size.
 win_size: 2048           # FFT size.
+fmin: 40
+fmax: 16000
 midi_smooth_width: 0.06  # in seconds
+mel_base: 'e'
 
 binarization_args:
   shuffle: true
