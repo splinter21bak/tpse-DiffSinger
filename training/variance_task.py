@@ -12,6 +12,7 @@ from modules.losses import DurationLoss, DiffusionLoss, RectifiedFlowLoss
 from modules.metrics.curve import RawCurveAccuracy
 from modules.metrics.duration import RhythmCorrectness, PhonemeDurationAccuracy
 from modules.toplevel import DiffSingerVariance
+from modules.gst.style_encoder import build_tpse_loss
 from utils.hparams import hparams
 from utils.plot import dur_to_figure, pitch_note_to_figure, curve_to_figure
 
@@ -66,6 +67,8 @@ class VarianceDataset(BaseDataset):
             batch['voicing'] = utils.collate_nd([s['voicing'] for s in samples], 0)
         if hparams['predict_tension']:
             batch['tension'] = utils.collate_nd([s['tension'] for s in samples], 0)
+        if hparams['train_tpse']:
+            batch['mel'] = utils.collate_nd([s['mel'] for s in samples], 0.0)
 
         return batch
 
@@ -112,6 +115,7 @@ class VarianceTask(BaseTask):
             self.variance_prediction_list.append('tension')
         self.predict_variances = len(self.variance_prediction_list) > 0
         self.lambda_var_loss = hparams['lambda_var_loss']
+        self.train_tpse = hparams['train_tpse']
         super()._finish_init()
 
     def _build_model(self):
@@ -154,6 +158,9 @@ class VarianceTask(BaseTask):
             else:
                 raise ValueError(f'Unknown diffusion type: {self.diffusion_type}')
             self.register_validation_loss('var_loss')
+        if self.train_tpse:
+            self.tpse_loss = build_tpse_loss()
+            self.register_validation_loss('tpse_loss')
 
     def run_model(self, sample, infer=False):
         spk_ids = sample['spk_ids'] if self.use_spk_id else None  # [B,]
@@ -170,6 +177,8 @@ class VarianceTask(BaseTask):
         note_glide = sample.get('note_glide')  # [B, T_n]
         mel2note = sample.get('mel2note')  # [B, T_s]
 
+        mel = sample.get('mel') if self.train_tpse else None  # [B, T_s, M]
+        
         base_pitch = sample.get('base_pitch')  # [B, T_s]
         pitch = sample.get('pitch')  # [B, T_s]
         energy = sample.get('energy')  # [B, T_s]
@@ -200,14 +209,14 @@ class VarianceTask(BaseTask):
             base_pitch=base_pitch, pitch=pitch,
             energy=energy, breathiness=breathiness, voicing=voicing, tension=tension,
             pitch_retake=pitch_retake, variance_retake=variance_retake,
-            spk_id=spk_ids, infer=infer
+            spk_id=spk_ids, infer=infer, mel=mel
         )
 
-        dur_pred, pitch_pred, variances_pred = output
+        dur_pred, pitch_pred, variances_pred, tpse_pred, gst_pred = output
         if infer:
             if dur_pred is not None:
                 dur_pred = dur_pred.round().long()
-            return dur_pred, pitch_pred, variances_pred  # Tensor, Tensor, Dict[str, Tensor]
+            return dur_pred, pitch_pred, variances_pred, tpse_pred, gst_pred  # Tensor, Tensor, Dict[str, Tensor]
         else:
             losses = {}
             if dur_pred is not None:
@@ -241,6 +250,10 @@ class VarianceTask(BaseTask):
                 else:
                     raise ValueError(f"Unknown diffusion type: {self.diffusion_type}")
                 losses['var_loss'] = self.lambda_var_loss * var_loss
+            
+            if gst_pred is not None:
+                tpse_loss = self.tpse_loss(tpse_pred, gst_pred)
+                losses['tpse_loss'] = tpse_loss
 
             return losses
 
@@ -250,7 +263,7 @@ class VarianceTask(BaseTask):
             def sample_get(key, idx, abs_idx):
                 return sample[key][idx][:self.valid_dataset.metadata[key][abs_idx]].unsqueeze(0)
 
-            dur_preds, pitch_preds, variances_preds = self.run_model(sample, infer=True)
+            dur_preds, pitch_preds, variances_preds, tpse_pred, gst_pred = self.run_model(sample, infer=True)
             for i in range(len(sample['indices'])):
                 data_idx = sample['indices'][i]
                 if data_idx < hparams['num_valid_plots']:

@@ -7,6 +7,7 @@ from modules.commons.common_layers import (
     XavierUniformInitLinear as Linear,
 )
 from modules.fastspeech.tts_modules import FastSpeech2Encoder, DurationPredictor
+from modules.gst.style_encoder import TPSE, StyleEncoder
 from utils.hparams import hparams
 from utils.phoneme_utils import PAD_INDEX
 
@@ -48,11 +49,30 @@ class FastSpeech2Variance(nn.Module):
                 dur_loss_type=dur_hparams['loss_type']
             )
 
+        self.train_tpse = hparams['train_tpse']
+        if self.train_tpse:
+            tpse_hparams = hparams['tpse_args']
+            self.gst = StyleEncoder(
+                idim = hparams['audio_num_mel_bins'], 
+                gst_tokens = tpse_hparams['gst_tokens'], 
+                gst_token_dim = hparams['hidden_size'], 
+                gst_heads = tpse_hparams['gst_heads'], 
+                gru_layers = tpse_hparams['gst_gru_layers'],
+                gru_units = tpse_hparams['gst_gru_hidden_size']
+            )
+            self.tpse = TPSE(
+                output_size = hparams['hidden_size'], 
+                n_layers = tpse_hparams['tpse_fc_layers'], 
+                gru_layers = tpse_hparams['tpse_gru_layers'],
+                gru_in_units = hparams['hidden_size'], 
+                gru_units = tpse_hparams['tpse_gru_hidden_size']
+            )
+
     def forward(
             self, txt_tokens, midi, ph2word,
             ph_dur=None, word_dur=None,
             spk_embed=None, languages=None,
-            infer=True
+            infer=True, mel=None
     ):
         """
         :param txt_tokens: (train, infer) [B, T_ph]
@@ -85,6 +105,19 @@ class FastSpeech2Variance(nn.Module):
             lang_embed = self.lang_embed(languages)
             extra_embed += lang_embed
         encoder_out = self.encoder(txt_embed, extra_embed, txt_tokens == 0)
+        
+        if self.train_tpse and mel is not None:
+            # print(mel.shape)
+            # print(encoder_out.shape)
+            gst_pred = self.gst(mel)
+            tpse_pred = self.tpse(encoder_out.detach()) # grad stopping
+            if infer:
+                encoder_out = encoder_out + tpse_pred
+            else:
+                encoder_out = encoder_out + gst_pred
+        else:
+            gst_pred = None
+            tpse_pred = None
 
         if self.predict_dur:
             midi_embed = self.midi_embed(midi)  # => [B, T_ph, H]
@@ -93,9 +126,9 @@ class FastSpeech2Variance(nn.Module):
                 dur_cond += spk_embed
             ph_dur_pred = self.dur_predictor(dur_cond, x_masks=txt_tokens == PAD_INDEX, infer=infer)
 
-            return encoder_out, ph_dur_pred
+            return encoder_out, ph_dur_pred, tpse_pred, gst_pred
         else:
-            return encoder_out, None
+            return encoder_out, None, tpse_pred, gst_pred
 
 
 class MelodyEncoder(nn.Module):

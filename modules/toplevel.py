@@ -201,7 +201,7 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
             base_pitch=None, pitch=None, pitch_expr=None, pitch_retake=None,
             variance_retake: Dict[str, Tensor] = None,
             spk_id=None, languages=None,
-            infer=True, **kwargs
+            infer=True, mel=None, **kwargs
     ):
         if self.use_spk_id:
             ph_spk_mix_embed = kwargs.get('ph_spk_mix_embed')
@@ -214,11 +214,11 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
         else:
             ph_spk_embed = spk_embed = None
 
-        encoder_out, dur_pred_out = self.fs2(
+        encoder_out, dur_pred_out, tpse_pred, gst_pred = self.fs2(
             txt_tokens, midi=midi, ph2word=ph2word,
             ph_dur=ph_dur, word_dur=word_dur,
             spk_embed=ph_spk_embed, languages=languages,
-            infer=infer
+            infer=infer, mel=mel
         )
 
         if not self.predict_pitch and not self.predict_variances:
@@ -306,4 +306,4 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
         else:
             variances_pred_out = variance_outputs
 
-        return dur_pred_out, pitch_pred_out, variances_pred_out
+        return dur_pred_out, pitch_pred_out, variances_pred_out, tpse_pred, gst_pred

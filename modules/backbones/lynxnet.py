@@ -10,6 +10,12 @@ from modules.commons.common_layers import SinusoidalPosEmb
 from utils.hparams import hparams
 
 
+class Conv1d(torch.nn.Conv1d):
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        nn.init.kaiming_normal_(self.weight)
+
+
 class SwiGLU(nn.Module):
     # Swish-Applies the gated linear unit function.
     def __init__(self, dim=-1):
@@ -81,12 +87,12 @@ class LYNXNetResidualLayer(nn.Module):
                                          activation=activation, dropout=dropout)
 
     def forward(self, x, conditioner, diffusion_step):
-        res_x = x.transpose(1, 2)
-        x = x + self.diffusion_projection(diffusion_step) + self.conditioner_projection(conditioner)
+        x = x + self.conditioner_projection(conditioner)
+        res_x = x
+        x = x + self.diffusion_projection(diffusion_step)
         x = x.transpose(1, 2)
-        x = self.convmodule(x)  # (#batch, dim, length)
-        x = x + res_x
-        x = x.transpose(1, 2)
+        x = self.convmodule(x)  # (#batch, dim, length) 
+        x = x.transpose(1, 2) + res_x
 
         return x  # (#batch, length, dim)
 
@@ -104,7 +110,7 @@ class LYNXNet(nn.Module):
         super().__init__()
         self.in_dims = in_dims
         self.n_feats = n_feats
-        self.input_projection = nn.Conv1d(in_dims * n_feats, num_channels, 1)
+        self.input_projection = Conv1d(in_dims * n_feats, num_channels, 1)
         self.diffusion_embedding = nn.Sequential(
             SinusoidalPosEmb(num_channels),
             nn.Linear(num_channels, num_channels * 4),
@@ -125,7 +131,7 @@ class LYNXNet(nn.Module):
             ]
         )
         self.norm = nn.LayerNorm(num_channels)
-        self.output_projection = nn.Conv1d(num_channels, in_dims * n_feats, kernel_size=1)
+        self.output_projection = Conv1d(num_channels, in_dims * n_feats, kernel_size=1)
         nn.init.zeros_(self.output_projection.weight)
 
     def forward(self, spec, diffusion_step, cond):
@@ -142,7 +148,7 @@ class LYNXNet(nn.Module):
             x = spec.flatten(start_dim=1, end_dim=2)  # [B, F x M, T]
 
         x = self.input_projection(x)  # x [B, residual_channel, T]
-        x = F.gelu(x)
+        # x = F.gelu(x) # 去掉这个ACT效果更好些
 
         diffusion_step = self.diffusion_embedding(diffusion_step).unsqueeze(-1)
 

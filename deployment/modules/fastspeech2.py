@@ -158,7 +158,11 @@ class FastSpeech2VarianceONNX(FastSpeech2Variance):
             lang_embed = self.lang_embed(languages * lang_mask)
             extra_embed += lang_embed
         x_masks = tokens == PAD_INDEX
-        return self.encoder(txt_embed, extra_embed, x_masks), x_masks
+        encoder_out = self.encoder(txt_embed, extra_embed, x_masks)
+        if self.train_tpse:
+            tpse_pred = self.tpse(encoder_out)
+            encoder_out = encoder_out + tpse_pred
+        return encoder_out, x_masks
 
     def forward_encoder_phoneme(self, tokens, ph_dur, languages=None):
         txt_embed = self.txt_embed(tokens)
@@ -173,7 +177,11 @@ class FastSpeech2VarianceONNX(FastSpeech2Variance):
         else:
             extra_embed = ph_dur_embed
         x_masks = tokens == PAD_INDEX
-        return self.encoder(txt_embed, extra_embed, x_masks), x_masks
+        encoder_out = self.encoder(txt_embed, extra_embed, x_masks)
+        if self.train_tpse:
+            tpse_pred = self.tpse(encoder_out)
+            encoder_out = encoder_out + tpse_pred
+        return encoder_out, x_masks
 
     def forward_dur_predictor(self, encoder_out, x_masks, ph_midi, spk_embed=None):
         midi_embed = self.midi_embed(ph_midi)
