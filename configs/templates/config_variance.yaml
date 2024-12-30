@@ -116,8 +116,8 @@ variances_prediction_args:
 
 train_tpse: true
 tpse_args:
-  gst_tokens: 10
-  gst_heads: 4
+  gst_tokens: 10 # 可能可以大点，例如20
+  gst_heads: 4 # 可能可以大点，例如6
   gst_gru_layers: 1
   gst_gru_hidden_size: 128
   tpse_fc_layers: 1
@@ -135,7 +135,7 @@ lr_scheduler_args:
   step_size: 10000
   gamma: 0.75
 max_batch_frames: 80000
-max_batch_size: 48
+max_batch_size: 48 # 用bn了建议拉满
 max_updates: 160000
 
 num_valid_plots: 10
