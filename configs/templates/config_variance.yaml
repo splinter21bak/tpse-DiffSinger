@@ -122,7 +122,7 @@ tpse_args:
   gst_gru_hidden_size: 128
   tpse_fc_layers: 1
   tpse_gru_layers: 1
-  tpse_gru_hidden_size: 128
+  tpse_gru_hidden_size: 64
 
 lambda_dur_loss: 1.0
 lambda_pitch_loss: 1.0
