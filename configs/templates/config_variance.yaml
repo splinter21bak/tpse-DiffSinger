@@ -1,5 +1,6 @@
 base_config:
   - configs/variance.yaml
+  - configs/tpse.yaml
 
 dictionaries:
   zh: dictionaries/opencpop-extension.txt

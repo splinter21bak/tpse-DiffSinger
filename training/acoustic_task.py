@@ -12,12 +12,12 @@ from basics.base_vocoder import BaseVocoder
 from modules.aux_decoder import build_aux_loss
 from modules.losses import DiffusionLoss, RectifiedFlowLoss
 from modules.toplevel import DiffSingerAcoustic, ShallowDiffusionOutput
+from modules.gst.style_encoder import build_tpse_loss
 from modules.vocoders.registry import get_vocoder_cls
 from utils.hparams import hparams
 from utils.plot import spec_to_figure
 
 matplotlib.use('Agg')
-
 
 class AcousticDataset(BaseDataset):
     def __init__(self, prefix, preload=False):
@@ -92,6 +92,7 @@ class AcousticTask(BaseTask):
             self.required_variances.append('voicing')
         if hparams['use_tension_embed']:
             self.required_variances.append('tension')
+        self.train_tpse = hparams['train_tpse']
         super()._finish_init()
 
     def _build_model(self):
@@ -115,6 +116,9 @@ class AcousticTask(BaseTask):
         else:
             raise ValueError(f"Unknown diffusion type: {self.diffusion_type}")
         self.register_validation_loss('mel_loss')
+        if self.train_tpse:
+            self.tpse_loss = build_tpse_loss()
+            self.register_validation_loss('tpse_loss')
 
     def run_model(self, sample, infer=False):
         txt_tokens = sample['tokens']  # [B, T_ph]
@@ -165,6 +169,11 @@ class AcousticTask(BaseTask):
                 else:
                     raise ValueError(f"Unknown diffusion type: {self.diffusion_type}")
                 losses['mel_loss'] = mel_loss
+            if output.gst_output is not None:
+                tpse_pred = output.tpse_output
+                gst_pred = output.gst_output
+                tpse_loss = self.tpse_loss(tpse_pred, gst_pred)
+                losses['tpse_loss'] = tpse_loss
 
             return losses
 

@@ -7,6 +7,7 @@ from modules.commons.common_layers import (
     XavierUniformInitLinear as Linear,
 )
 from modules.fastspeech.tts_modules import FastSpeech2Encoder, mel2ph_to_dur
+from modules.gst.style_encoder import TPSE, StyleEncoder
 from utils.hparams import hparams
 from utils.phoneme_utils import PAD_INDEX
 
@@ -18,12 +19,15 @@ class FastSpeech2Acoustic(nn.Module):
         self.use_lang_id = hparams.get('use_lang_id', False)
         if self.use_lang_id:
             self.lang_embed = Embedding(hparams['num_lang'] + 1, hparams['hidden_size'], padding_idx=0)
+            use_esm=hparams['use_esm']
+        else:
+            use_esm=False
         self.dur_embed = Linear(1, hparams['hidden_size'])
         self.encoder = FastSpeech2Encoder(
             hidden_size=hparams['hidden_size'], num_layers=hparams['enc_layers'],
             ffn_kernel_size=hparams['enc_ffn_kernel_size'], ffn_act=hparams['ffn_act'],
             dropout=hparams['dropout'], num_heads=hparams['num_heads'],
-            use_pos_embed=hparams['use_pos_embed'], rel_pos=hparams['rel_pos']
+            use_pos_embed=hparams['use_pos_embed'], rel_pos=hparams['rel_pos'], use_esm=use_esm
         )
 
         self.pitch_embed = Linear(1, hparams['hidden_size'])
@@ -60,7 +64,26 @@ class FastSpeech2Acoustic(nn.Module):
         if self.use_spk_id:
             self.spk_embed = Embedding(hparams['num_spk'], hparams['hidden_size'])
 
-    def forward_variance_embedding(self, condition, key_shift=None, speed=None, **variances):
+        self.train_tpse = hparams['train_tpse']
+        if self.train_tpse:
+            tpse_hparams = hparams['tpse_args']
+            self.gst = StyleEncoder(
+                idim = hparams['audio_num_mel_bins'], 
+                gst_tokens = tpse_hparams['gst_tokens'], 
+                gst_token_dim = hparams['hidden_size'], 
+                gst_heads = tpse_hparams['gst_heads'], 
+                gru_layers = tpse_hparams['gst_gru_layers'],
+                gru_units = tpse_hparams['gst_gru_hidden_size']
+            )
+            self.tpse = TPSE(
+                output_size = hparams['hidden_size'], 
+                n_layers = tpse_hparams['tpse_fc_layers'], 
+                gru_layers = tpse_hparams['tpse_gru_layers'],
+                gru_in_units = hparams['hidden_size'], 
+                gru_units = tpse_hparams['tpse_gru_hidden_size']
+            )
+
+    def forward_variance_embedding(self, condition, key_shift=None, speed=None, infer=False, **variances):
         if self.use_variance_embeds:
             variance_embeds = torch.stack([
                 self.variance_embeds[v_name](variances[v_name][:, :, None])
@@ -81,7 +104,7 @@ class FastSpeech2Acoustic(nn.Module):
     def forward(
             self, txt_tokens, mel2ph, f0,
             key_shift=None, speed=None,
-            spk_embed_id=None, languages=None,
+            spk_embed_id=None, languages=None, mel=None, infer=False,
             **kwargs
     ):
         txt_embed = self.txt_embed(txt_tokens)
@@ -89,14 +112,28 @@ class FastSpeech2Acoustic(nn.Module):
         dur_embed = self.dur_embed(dur[:, :, None])
         if self.use_lang_id:
             lang_embed = self.lang_embed(languages)
-            extra_embed = dur_embed + lang_embed
         else:
-            extra_embed = dur_embed
-        encoder_out = self.encoder(txt_embed, extra_embed, txt_tokens == 0)
+            lang_embed = None
+        #     extra_embed = dur_embed + lang_embed
+        # else:
+        #     extra_embed = dur_embed
+        extra_embed = dur_embed
+        encoder_out = self.encoder(txt_embed, lang_embed, extra_embed, txt_tokens == 0)
 
         encoder_out = F.pad(encoder_out, [0, 0, 1, 0])
         mel2ph_ = mel2ph[..., None].repeat([1, 1, encoder_out.shape[-1]])
         condition = torch.gather(encoder_out, 1, mel2ph_)
+
+        if self.train_tpse and mel is not None:
+            tpse_pred = self.tpse(condition.detach()) # grad stopping
+            gst_pred = self.gst(mel)
+            if not infer:
+                condition += gst_pred
+            else:
+                condition += tpse_pred
+        else:
+            gst_pred = None
+            tpse_pred = None
 
         if self.use_spk_id:
             spk_mix_embed = kwargs.get('spk_mix_embed')
@@ -111,7 +148,8 @@ class FastSpeech2Acoustic(nn.Module):
         condition += pitch_embed
 
         condition = self.forward_variance_embedding(
-            condition, key_shift=key_shift, speed=speed, **kwargs
+            condition, key_shift=key_shift, speed=speed, infer=infer, **kwargs
         )
 
-        return condition
+
+        return condition, tpse_pred, gst_pred

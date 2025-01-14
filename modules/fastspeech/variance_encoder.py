@@ -21,6 +21,9 @@ class FastSpeech2Variance(nn.Module):
         self.txt_embed = Embedding(vocab_size, hparams['hidden_size'], PAD_INDEX)
         if self.use_lang_id:
             self.lang_embed = Embedding(hparams['num_lang'] + 1, hparams['hidden_size'], padding_idx=0)
+            self.use_esm=hparams['use_esm']
+        else:
+            self.use_esm=False
 
         if self.predict_dur:
             self.onset_embed = Embedding(2, hparams['hidden_size'])
@@ -32,7 +35,7 @@ class FastSpeech2Variance(nn.Module):
             hidden_size=hparams['hidden_size'], num_layers=hparams['enc_layers'],
             ffn_kernel_size=hparams['enc_ffn_kernel_size'], ffn_act=hparams['ffn_act'],
             dropout=hparams['dropout'], num_heads=hparams['num_heads'],
-            use_pos_embed=hparams['use_pos_embed'], rel_pos=hparams['rel_pos']
+            use_pos_embed=hparams['use_pos_embed'], rel_pos=hparams['rel_pos'], use_esm=self.use_esm
         )
 
         dur_hparams = hparams['dur_prediction_args']
@@ -83,8 +86,10 @@ class FastSpeech2Variance(nn.Module):
             extra_embed = ph_dur_embed
         if self.use_lang_id:
             lang_embed = self.lang_embed(languages)
-            extra_embed += lang_embed
-        encoder_out = self.encoder(txt_embed, extra_embed, txt_tokens == 0)
+        else:
+            lang_embed = None
+            # extra_embed += lang_embed
+        encoder_out = self.encoder(txt_embed, lang_embed, extra_embed, txt_tokens == 0)
 
         if self.predict_dur:
             midi_embed = self.midi_embed(midi)  # => [B, T_ph, H]
@@ -138,8 +143,9 @@ class MelodyEncoder(nn.Module):
         ornament_embed = 0
         if self.use_glide_embed:
             ornament_embed += self.note_glide_embed(glide) * self.glide_embed_scale
+        lang_embed = None
         encoder_out = self.encoder(
-            midi_embed, dur_embed + ornament_embed,
+            midi_embed, lang_embed, dur_embed + ornament_embed,
             padding_mask=note_midi < 0
         )
         encoder_out = self.out_proj(encoder_out)

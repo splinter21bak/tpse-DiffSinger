@@ -15,6 +15,7 @@ from modules.fastspeech.tts_modules import LengthRegulator
 from modules.pe import initialize_pe
 from utils.binarizer_utils import (
     SinusoidalSmoothingConv1d,
+    get_mel_torch,
     get_mel2ph_torch,
     get_energy_librosa,
     get_breathiness,
@@ -30,6 +31,7 @@ from utils.plot import distribution_to_figure
 os.environ["OMP_NUM_THREADS"] = "1"
 VARIANCE_ITEM_ATTRIBUTES = [
     'spk_id',  # index number of dataset/speaker, int64
+    'mel',  # frame-level Mel Spectrum，float32[T_s, M]
     'languages',  # index numbers of phoneme languages, int64[T_ph,]
     'tokens',  # index numbers of phonemes, int64[T_ph,]
     'ph_dur',  # durations of phonemes, in number of frames, int64[T_ph,]
@@ -84,6 +86,12 @@ class VarianceBinarizer(BaseBinarizer):
         self.lr = LengthRegulator().to(self.device)
         self.prefer_ds = self.binarization_args['prefer_ds']
         self.cached_ds = {}
+        self.train_tpse = hparams['train_tpse']
+        if self.train_tpse:
+            assert hparams['mel_base'] == 'e', (
+                "Mel base must be set to \'e\' according to 2nd stage of the migration plan. "
+                "See https://github.com/openvpi/DiffSinger/releases/tag/v2.3.0 for more details."
+            )
 
     def load_attr_from_ds(self, ds_id, name, attr, idx=0):
         item_name = f'{ds_id}:{name}'
@@ -294,6 +302,17 @@ class VarianceBinarizer(BaseBinarizer):
             raise FileNotFoundError(meta_data['wav_fn'])
         else:
             waveform = None
+        
+        if self.train_tpse and not self.prefer_ds: # 这里要注意，使用.ds训练是没有waveform的
+            mel = get_mel_torch(
+                waveform, hparams['audio_sample_rate'], num_mel_bins=hparams['audio_num_mel_bins'],
+                hop_size=hparams['hop_size'], win_size=hparams['win_size'], fft_size=hparams['fft_size'],
+                fmin=hparams['fmin'], fmax=hparams['fmax'],
+                device=self.device
+            )
+        else:
+            mel = None
+        processed_input['mel'] = mel
 
         global pitch_extractor
         if pitch_extractor is None:

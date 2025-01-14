@@ -14,6 +14,7 @@ from deployment.modules.rectified_flow import (
 )
 from deployment.modules.fastspeech2 import FastSpeech2AcousticONNX, FastSpeech2VarianceONNX
 from modules.toplevel import DiffSingerAcoustic, DiffSingerVariance
+from modules.gst.style_encoder import TPSE, StyleEncoder
 from utils.hparams import hparams
 
 
@@ -175,6 +176,27 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
                 self.variance_predictor = self.build_adaptor(cls=MultiVarianceRectifiedFlowONNX)
             else:
                 raise NotImplementedError(self.diffusion_type)
+        self.train_tpse = hparams['train_tpse']
+        if self.train_tpse:
+            del self.gst
+            tpse_hparams = hparams['tpse_args']
+            self.tpse = TPSE(
+                output_size = hparams['hidden_size'], 
+                n_layers = tpse_hparams['tpse_fc_layers'], 
+                gru_layers = tpse_hparams['tpse_gru_layers'],
+                gru_in_units = hparams['hidden_size'], 
+                gru_units = tpse_hparams['tpse_gru_hidden_size']
+            )
+            if self.use_melody_encoder and self.train_me_tpse:
+                del self.me_gst
+                self.me_tpse = TPSE(
+                    output_size = hparams['hidden_size'], 
+                    n_layers = tpse_hparams['tpse_fc_layers'], 
+                    gru_layers = tpse_hparams['tpse_gru_layers'],
+                    gru_in_units = hparams['hidden_size'], 
+                    gru_units = tpse_hparams['tpse_gru_hidden_size']
+                )
+
 
     def build_smooth_op(self, device):
         smooth_kernel_size = round(hparams['midi_smooth_width'] * hparams['audio_sample_rate'] / hparams['hop_size'])
@@ -197,6 +219,16 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
         if hparams['use_spk_id'] and hasattr(self, 'frozen_spk_embed'):
             encoder_out += self.frozen_spk_embed
         return encoder_out
+
+    def forward_tpse(self, condition):
+        if self.train_tpse:
+            condition += self.tpse(condition)
+        return condition
+
+    def forward_me_tpse(self, condition):
+        if self.train_me_tpse:
+            condition += self.me_tpse(condition)
+        return condition
 
     def forward_linguistic_encoder_word(self, tokens, word_div, word_dur, languages=None):
         encoder_out, x_masks = self.fs2.forward_encoder_word(tokens, word_div, word_dur, languages=languages)
@@ -227,6 +259,8 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
             pitch=None, expr=None, retake=None, spk_embed=None
     ):
         condition = self.forward_mel2x_gather(encoder_out, ph_dur, x_dim=self.hidden_size)
+        if self.train_tpse:
+            condition = self.forward_tpse(condition)
         if self.use_melody_encoder:
             if self.melody_encoder.use_glide_embed and note_glide is None:
                 note_glide = torch.LongTensor([[0]]).to(encoder_out.device)
@@ -235,6 +269,8 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
                 glide=note_glide
             )
             melody_encoder_out = self.forward_mel2x_gather(melody_encoder_out, note_dur, x_dim=self.hidden_size)
+            if self.train_me_tpse:
+                melody_encoder_out = self.forward_me_tpse(melody_encoder_out)
             condition += melody_encoder_out
         if expr is None:
             retake_embed = self.pitch_retake_embed(retake.long())
@@ -275,6 +311,8 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
             variances: dict = None, retake=None, spk_embed=None
     ):
         condition = self.forward_mel2x_gather(encoder_out, ph_dur, x_dim=self.hidden_size)
+        if self.train_tpse:
+            condition = self.forward_tpse(condition)
         variance_cond = condition + self.pitch_embed(pitch[:, :, None])
         non_retake_masks = [
             v_retake.float()  # [B, T, 1]
@@ -309,6 +347,10 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
                 del model.melody_encoder
         if self.predict_variances:
             del model.variance_predictor
+        if self.train_tpse:
+            del model.tpse
+            if self.train_me_tpse:
+                del model.me_tpse
         model.fs2 = model.fs2.view_as_encoder()
         if self.predict_dur:
             model.forward = model.forward_linguistic_encoder_word
@@ -325,6 +367,10 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
                 del model.melody_encoder
         if self.predict_variances:
             del model.variance_predictor
+        if self.train_tpse:
+            del model.tpse
+            if self.train_me_tpse:
+                del model.me_tpse
         model.fs2 = model.fs2.view_as_dur_predictor()
         model.forward = model.forward_dur_predictor
         return model
@@ -348,6 +394,10 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
             del model.melody_encoder
         if self.predict_variances:
             del model.variance_predictor
+        if self.train_tpse:
+            del model.tpse
+            if self.train_me_tpse:
+                del model.me_tpse
         model.forward = model.forward_pitch_reflow
         return model
 
@@ -358,6 +408,10 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
             del model.melody_encoder
         if self.predict_variances:
             del model.variance_predictor
+        if self.train_tpse:
+            del model.tpse
+            if self.train_me_tpse:
+                del model.me_tpse
         model.forward = model.forward_pitch_postprocess
         return model
 
@@ -370,6 +424,9 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
                 del model.melody_encoder
         if self.predict_variances:
             del model.variance_predictor
+        if self.train_tpse:
+            if self.train_me_tpse:
+                del model.me_tpse
         model.forward = model.forward_variance_preprocess
         return model
 
@@ -378,6 +435,10 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
         model = copy.deepcopy(self)
         del model.fs2
         del model.lr
+        if self.train_tpse:
+            del model.tpse
+            if self.train_me_tpse:
+                del model.me_tpse
         if self.predict_pitch:
             del model.pitch_predictor
             if self.use_melody_encoder:
@@ -392,5 +453,9 @@ class DiffSingerVarianceONNX(DiffSingerVariance):
             del model.pitch_predictor
             if self.use_melody_encoder:
                 del model.melody_encoder
+        if self.train_tpse:
+            del model.tpse
+            if self.train_me_tpse:
+                del model.me_tpse
         model.forward = model.forward_variance_postprocess
         return model

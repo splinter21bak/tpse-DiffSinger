@@ -1,3 +1,15 @@
+# TPSE-DiffSinger
+
+参考 [Predicting Expressive Speaking Style From Text In End-To-End Speech Synthesis](https://arxiv.org/abs/1808.01410)
+
+实现参考了https://github.com/tuyenvd268/TP_GST https://github.com/cnlinxi/tpse_tacotron2
+
+配置相关在`configs/tpse.yaml`
+
+请注意训练variance模型时候需要重新预处理，因为需要mel特征，这也意味着该特性是不能使用.ds训练的
+
+lynxnet已默认最新版本
+
 # DiffSinger (OpenVPI maintained version)
 
 [![arXiv](https://img.shields.io/badge/arXiv-Paper-<COLOR>.svg)](https://arxiv.org/abs/2105.02446)

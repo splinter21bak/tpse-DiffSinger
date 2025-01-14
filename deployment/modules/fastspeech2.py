@@ -82,12 +82,17 @@ class FastSpeech2AcousticONNX(FastSpeech2Acoustic):
                 dim=-1
             )
             lang_embed = self.lang_embed(languages * lang_mask)
-            extra_embed = dur_embed + lang_embed
+            # extra_embed = dur_embed + lang_embed
         else:
-            extra_embed = dur_embed
-        encoded = self.encoder(txt_embed, extra_embed, tokens == PAD_INDEX)
+            lang_embed = None
+        extra_embed = dur_embed
+        encoded = self.encoder(txt_embed, lang_embed, extra_embed, tokens == PAD_INDEX)
         encoded = F.pad(encoded, (0, 0, 1, 0))
         condition = torch.gather(encoded, 1, mel2ph)
+
+        if hparams['train_tpse']:
+            tpse_pred = self.tpse(condition)
+            condition += tpse_pred
 
         if self.f0_embed_type == 'discrete':
             pitch = f0_to_coarse(f0)
@@ -127,6 +132,7 @@ class FastSpeech2AcousticONNX(FastSpeech2Acoustic):
                 condition += self.frozen_spk_embed
             else:
                 condition += spk_embed
+
         return condition
 
 
@@ -156,9 +162,9 @@ class FastSpeech2VarianceONNX(FastSpeech2Variance):
                 dim=-1
             )
             lang_embed = self.lang_embed(languages * lang_mask)
-            extra_embed += lang_embed
+            # extra_embed += lang_embed
         x_masks = tokens == PAD_INDEX
-        return self.encoder(txt_embed, extra_embed, x_masks), x_masks
+        return self.encoder(txt_embed, lang_embed, extra_embed, x_masks), x_masks
 
     def forward_encoder_phoneme(self, tokens, ph_dur, languages=None):
         txt_embed = self.txt_embed(tokens)
@@ -169,11 +175,12 @@ class FastSpeech2VarianceONNX(FastSpeech2Variance):
                 dim=-1
             )
             lang_embed = self.lang_embed(languages * lang_mask)
-            extra_embed = ph_dur_embed + lang_embed
+            # extra_embed = ph_dur_embed + lang_embed
+            extra_embed = ph_dur_embed
         else:
             extra_embed = ph_dur_embed
         x_masks = tokens == PAD_INDEX
-        return self.encoder(txt_embed, extra_embed, x_masks), x_masks
+        return self.encoder(txt_embed, lang_embed, extra_embed, x_masks), x_masks
 
     def forward_dur_predictor(self, encoder_out, x_masks, ph_midi, spk_embed=None):
         midi_embed = self.midi_embed(ph_midi)

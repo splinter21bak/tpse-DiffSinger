@@ -20,13 +20,16 @@ from modules.fastspeech.acoustic_encoder import FastSpeech2Acoustic
 from modules.fastspeech.param_adaptor import ParameterAdaptorModule
 from modules.fastspeech.tts_modules import RhythmRegulator, LengthRegulator
 from modules.fastspeech.variance_encoder import FastSpeech2Variance, MelodyEncoder
+from modules.gst.style_encoder import TPSE, StyleEncoder
 from utils.hparams import hparams
 
 
 class ShallowDiffusionOutput:
-    def __init__(self, *, aux_out=None, diff_out=None):
+    def __init__(self, *, aux_out=None, diff_out=None, gst_output=None, tpse_output=None):
         self.aux_out = aux_out
         self.diff_out = diff_out
+        self.gst_output = gst_output
+        self.tpse_output = tpse_output
 
 
 class DiffSingerAcoustic(CategorizedModule, ParameterAdaptorModule):
@@ -85,9 +88,9 @@ class DiffSingerAcoustic(CategorizedModule, ParameterAdaptorModule):
             self, txt_tokens, mel2ph, f0, key_shift=None, speed=None,
             spk_embed_id=None, languages=None, gt_mel=None, infer=True, **kwargs
     ) -> ShallowDiffusionOutput:
-        condition = self.fs2(
+        condition, tpse_pred, gst_pred = self.fs2(
             txt_tokens, mel2ph, f0, key_shift=key_shift, speed=speed,
-            spk_embed_id=spk_embed_id, languages=languages,
+            spk_embed_id=spk_embed_id, languages=languages, mel=gt_mel, infer=infer, 
             **kwargs
         )
         if infer:
@@ -102,7 +105,7 @@ class DiffSingerAcoustic(CategorizedModule, ParameterAdaptorModule):
                 aux_mel_pred = src_mel = None
             mel_pred = self.diffusion(condition, src_spec=src_mel, infer=True)
             mel_pred *= ((mel2ph > 0).float()[:, :, None])
-            return ShallowDiffusionOutput(aux_out=aux_mel_pred, diff_out=mel_pred)
+            return ShallowDiffusionOutput(aux_out=aux_mel_pred, diff_out=mel_pred, gst_output=gst_pred, tpse_output=tpse_pred)
         else:
             if self.use_shallow_diffusion:
                 if self.train_aux_decoder:
@@ -114,12 +117,12 @@ class DiffSingerAcoustic(CategorizedModule, ParameterAdaptorModule):
                     diff_out = self.diffusion(condition, gt_spec=gt_mel, infer=False)
                 else:
                     diff_out = None
-                return ShallowDiffusionOutput(aux_out=aux_out, diff_out=diff_out)
+                return ShallowDiffusionOutput(aux_out=aux_out, diff_out=diff_out, gst_output=gst_pred, tpse_output=tpse_pred)
 
             else:
                 aux_out = None
                 diff_out = self.diffusion(condition, gt_spec=gt_mel, infer=False)
-                return ShallowDiffusionOutput(aux_out=aux_out, diff_out=diff_out)
+                return ShallowDiffusionOutput(aux_out=aux_out, diff_out=diff_out, gst_output=gst_pred, tpse_output=tpse_pred)
 
 
 class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
@@ -195,13 +198,49 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
             else:
                 raise NotImplementedError(self.diffusion_type)
 
+        self.train_tpse = hparams['train_tpse']
+        if self.train_tpse:
+            tpse_hparams = hparams['tpse_args']
+            self.gst = StyleEncoder(
+                idim = hparams['audio_num_mel_bins'], 
+                gst_tokens = tpse_hparams['gst_tokens'], 
+                gst_token_dim = hparams['hidden_size'], 
+                gst_heads = tpse_hparams['gst_heads'], 
+                gru_layers = tpse_hparams['gst_gru_layers'],
+                gru_units = tpse_hparams['gst_gru_hidden_size']
+            )
+            self.tpse = TPSE(
+                output_size = hparams['hidden_size'], 
+                n_layers = tpse_hparams['tpse_fc_layers'], 
+                gru_layers = tpse_hparams['tpse_gru_layers'],
+                gru_in_units = hparams['hidden_size'], 
+                gru_units = tpse_hparams['tpse_gru_hidden_size']
+            )
+            self.train_me_tpse = tpse_hparams['train_me_tpse']
+            if self.use_melody_encoder and self.train_me_tpse:
+                self.me_gst = StyleEncoder(
+                    idim = hparams['audio_num_mel_bins'], 
+                    gst_tokens = tpse_hparams['gst_tokens'], 
+                    gst_token_dim = hparams['hidden_size'], 
+                    gst_heads = tpse_hparams['gst_heads'], 
+                    gru_layers = tpse_hparams['gst_gru_layers'],
+                    gru_units = tpse_hparams['gst_gru_hidden_size']
+                )
+                self.me_tpse = TPSE(
+                    output_size = hparams['hidden_size'], 
+                    n_layers = tpse_hparams['tpse_fc_layers'], 
+                    gru_layers = tpse_hparams['tpse_gru_layers'],
+                    gru_in_units = hparams['hidden_size'], 
+                    gru_units = tpse_hparams['tpse_gru_hidden_size']
+                )
+
     def forward(
             self, txt_tokens, midi, ph2word, ph_dur=None, word_dur=None, mel2ph=None,
             note_midi=None, note_rest=None, note_dur=None, note_glide=None, mel2note=None,
             base_pitch=None, pitch=None, pitch_expr=None, pitch_retake=None,
             variance_retake: Dict[str, Tensor] = None,
             spk_id=None, languages=None,
-            infer=True, **kwargs
+            infer=True, mel=None, **kwargs
     ):
         if self.use_spk_id:
             ph_spk_mix_embed = kwargs.get('ph_spk_mix_embed')
@@ -222,7 +261,7 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
         )
 
         if not self.predict_pitch and not self.predict_variances:
-            return dur_pred_out, None, ({} if infer else None)
+            return dur_pred_out, None, ({} if infer else None), None, None, None, None
 
         if mel2ph is None and word_dur is not None:  # inference from file
             dur_pred_align = self.rr(dur_pred_out, ph2word, word_dur)
@@ -232,6 +271,20 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
         encoder_out = F.pad(encoder_out, [0, 0, 1, 0])
         mel2ph_ = mel2ph[..., None].repeat([1, 1, hparams['hidden_size']])
         condition = torch.gather(encoder_out, 1, mel2ph_)
+        
+        if self.train_tpse:
+            if mel is not None:
+                gst_pred = self.gst(mel)
+            else:
+                gst_pred = None
+            tpse_pred = self.tpse(condition.detach()) # grad stopping
+            if not infer:
+                condition = condition + gst_pred
+            else:
+                condition = condition + tpse_pred
+        else:
+            gst_pred = None
+            tpse_pred = None
 
         if self.use_spk_id:
             condition += spk_embed
@@ -245,6 +298,19 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
                 melody_encoder_out = F.pad(melody_encoder_out, [0, 0, 1, 0])
                 mel2note_ = mel2note[..., None].repeat([1, 1, hparams['hidden_size']])
                 melody_condition = torch.gather(melody_encoder_out, 1, mel2note_)
+                if self.train_tpse and self.train_me_tpse:
+                    if mel is not None:
+                        me_gst_pred = self.me_gst(mel)
+                    else:
+                        me_gst_pred = None
+                    me_tpse_pred = self.me_tpse(melody_condition.detach()) # grad stopping
+                    if not infer:
+                        melody_condition = melody_condition + me_gst_pred
+                    else:
+                        melody_condition = melody_condition + me_tpse_pred
+                else:
+                    me_gst_pred = None
+                    me_tpse_pred = None
                 pitch_cond = condition + melody_condition
             else:
                 pitch_cond = condition.clone()  # preserve the original tensor to avoid further inplace operations
@@ -285,7 +351,7 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
             pitch_pred_out = None
 
         if not self.predict_variances:
-            return dur_pred_out, pitch_pred_out, ({} if infer else None)
+            return dur_pred_out, pitch_pred_out, ({} if infer else None), tpse_pred, gst_pred, me_tpse_pred, me_gst_pred
 
         if pitch is None:
             pitch = base_pitch + pitch_pred_out
@@ -306,4 +372,4 @@ class DiffSingerVariance(CategorizedModule, ParameterAdaptorModule):
         else:
             variances_pred_out = variance_outputs
 
-        return dur_pred_out, pitch_pred_out, variances_pred_out
+        return dur_pred_out, pitch_pred_out, variances_pred_out, tpse_pred, gst_pred, me_tpse_pred, me_gst_pred
